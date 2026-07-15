@@ -435,7 +435,7 @@ const kindOf=t=>rootOf(t).kind||'个人成长';
 const kindColor=t=>t.status==='done'?'var(--green)':(kindOf(t)==='工作'?'var(--orange)':'var(--blue)');
 const prClass=p=>p==='P0'?'P0':p==='P1'?'P1':p==='P2'?'P2':'Px';
 const PRCYCLE={null:'P0',P0:'P1',P1:'P2',P2:null};
-const nmBadge=t=>isLeaf(t)?'':`<span class="nm${t.done_leaves===t.leaves?' full':''}" title="子树叶子完成度">${t.done_leaves}/${t.leaves}</span>`;
+const nmBadge=t=>isLeaf(t)?'':`<span class="nm${t.done_leaves===t.leaves?' full':''}" title="父任务不单独勾选:全部子任务完成后自动完成(点行展开勾子任务)">${t.done_leaves}/${t.leaves}</span>`;
 const cbHtml=(t,cls)=>isLeaf(t)?`<input type="checkbox" class="${cls}" data-cb="${t.id}" ${t.status==='done'?'checked':''}>`:'';
 function bindCbs(root,cls){root.querySelectorAll('input[data-cb].'+cls).forEach(cb=>{
   cb.addEventListener('pointerdown',e=>e.stopPropagation());
@@ -561,9 +561,21 @@ function bindPoolCardOps(root){
 function renderPlanPool(){
   const list=DATA.tasks.filter(t=>t.month===viewMonth&&t.status==='planned');
   $('planCnt').textContent=list.length+' 项';
+  const addRowP=(t,d)=>`<div class="subinp" data-psubinp="${t.id}" style="margin:2px 0 10px ${d*22+30}px"><input placeholder="添加一个子任务,回车确认…"><button>添加</button></div>`;
+  const kidRowP=(t,d)=>{
+    const open=expanded.has(t.id);
+    let h=`<div class="mrow" data-prow="${t.id}" style="padding-left:${d*22}px;cursor:pointer;min-height:38px" title="点击展开/收起">
+      <span class="mg-caret${open?' open':''}">▸</span>
+      ${cbHtml(t,'tcb')}${nmBadge(t)}
+      <span class="name">${esc(t.name)}</span>
+      ${t.start_date?`<span class="datechip">${fmtMD(t.start_date)}→${fmtMD(t.end_date)}</span>`:''}
+    </div>`;
+    if(open){h+=kidsOf(t.id).map(k=>kidRowP(k,d+1)).join('');h+=addRowP(t,d+1);}
+    return h;};
   $('planList').innerHTML=list.map(t=>{
-    const cr=crumbs(t);
-    return `<div class="mrow" data-tid="${t.id}" draggable="true">
+    const cr=crumbs(t);const open=expanded.has(t.id);
+    let h=`<div class="mrow" data-tid="${t.id}" data-prow="${t.id}" draggable="true" style="cursor:pointer" title="点击展开/收起 · 拖到甘特排期">
+      <span class="mg-caret${open?' open':''}">▸</span>
       ${cbHtml(t,'tcb')}${nmBadge(t)}
       <span class="name pname">${esc(t.name)}</span>
       ${cr?`<span class="crumb" title="${esc(cr)}">${esc(cr)}</span>`:''}
@@ -573,12 +585,12 @@ function renderPlanPool(){
       <span class="ops">
         <span class="ab ed" data-ed="${t.id}" title="改名">✎</span>
         ${t.start_date?'':`<span class="ab in" data-sch="${t.id}" title="排期(默认3天,甘特可拖)">⏱</span>`}
-        <span class="chipbtn" data-sub="${t.id}" title="添加子任务">＋ 子任务</span>
         <span class="ab ed" data-rp="${t.id}" title="挂到其他任务下 / 设为顶层">⇄</span>
         ${t.parent_id?`<span class="ab in" data-out="${t.id}" title="独立出去(脱离父任务成顶层)">⇱</span>`
                      :`<span class="ab rm" data-back="${t.id}" title="退回任务池(清空月份与排期)">×</span>`}
-      </span></div>
-      <div class="subinp" data-subinp="${t.id}" style="display:none"><input placeholder="子任务名,回车创建"><button>＋</button></div>`;
+      </span></div>`;
+    if(open){h+=kidsOf(t.id).map(k=>kidRowP(k,1)).join('');h+=addRowP(t,1);}
+    return h;
   }).join('')||'<div class="mrow" style="color:var(--text3);font-size:13px">本月规划池是空的:从任务池「→月」排入,或下方直接添加</div>';
   $('planList').insertAdjacentHTML('beforeend',
     `<div class="addline" style="margin:10px 0"><input id="nplName" placeholder="＋ 直接添加本月任务"><button id="nplOk">添加</button></div>`);
@@ -593,12 +605,13 @@ function renderPlanPool(){
     const t=MAP.get(+b.dataset.sch);
     const base=ymOf(today())===viewMonth?today():viewMonth+'-01';
     patchTask(t.id,{start_date:base,end_date:addDays(base,2)},'已排期,去甘特图拖拽调整 ✓');}));
-  root.querySelectorAll('[data-sub]').forEach(b=>b.addEventListener('click',()=>{
-    const box=root.querySelector(`[data-subinp="${b.dataset.sub}"]`);
-    box.style.display=box.style.display==='none'?'flex':'none';box.querySelector('input').focus();}));
-  root.querySelectorAll('[data-subinp]').forEach(box=>{
+  root.querySelectorAll('.mrow[data-prow]').forEach(row=>row.addEventListener('click',e=>{
+    if(e.target.closest('.ab,.badge,input,button'))return;
+    const id=+row.dataset.prow;expanded.has(id)?expanded.delete(id):expanded.add(id);renderPlanPool();}));
+  root.querySelectorAll('[data-psubinp]').forEach(box=>{
     const submit=()=>{const v=box.querySelector('input').value.trim();if(!v)return;
-      createTask({name:v,parent_id:+box.dataset.subinp},'子任务已创建 ✓');};
+      expanded.add(+box.dataset.psubinp);
+      createTask({name:v,parent_id:+box.dataset.psubinp},'子任务已创建 ✓');};
     box.querySelector('button').addEventListener('click',submit);
     box.querySelector('input').addEventListener('keydown',e=>{if(e.key==='Enter')submit();});});
   root.querySelectorAll('[data-rp]').forEach(b=>b.addEventListener('click',()=>openReparent(MAP.get(+b.dataset.rp))));
