@@ -39,7 +39,6 @@ const find = (id) => data.tasks.find(t => t.id === id);
 ok(find(A.id).leaves === 2 && find(A.id).done_leaves === 0, 'A 子树叶子=2(C,D)');
 
 // ── 完成冒泡:勾 C → B 自动 done;勾 D → A 自动 done
-ok((await api('POST', `/api/task/${B.id}/toggle-done`)).status === 400, '非叶子 B 拒绝直接勾');
 await api('POST', `/api/task/${C.id}/toggle-done`);
 data = (await api('GET', '/api/data')).body;
 ok(find(B.id).status === 'done' && find(B.id).done_at, 'C 完成 → B 自动完成');
@@ -48,10 +47,19 @@ await api('POST', `/api/task/${D.id}/toggle-done`);
 data = (await api('GET', '/api/data')).body;
 ok(find(A.id).status === 'done', '全部叶子完成 → A 冒泡完成');
 
-// ── 可逆:打开 C → B、A 自动重开
+// ── 父任务直接勾选 → 整棵子树级联完成/重开(此刻 A 全 done)
+await api('POST', `/api/task/${A.id}/toggle-done`);      // 勾已完成的 A → 应重开整棵
+data = (await api('GET', '/api/data')).body;
+ok(find(A.id).status !== 'done' && find(B.id).status !== 'done' && find(C.id).status !== 'done' && find(D.id).status !== 'done', '勾父 A(已完成)→ 整棵子树级联重开');
+await api('POST', `/api/task/${A.id}/toggle-done`);      // 再勾 A → 整棵级联完成
+data = (await api('GET', '/api/data')).body;
+ok(find(A.id).status === 'done' && find(B.id).status === 'done' && find(C.id).status === 'done' && find(D.id).status === 'done', '勾父 A → 整棵子树级联完成');
+
+// ── 可逆:打开叶子 C → B、A 自动重开(其余仍 done)
 await api('POST', `/api/task/${C.id}/toggle-done`);
 data = (await api('GET', '/api/data')).body;
-ok(find(B.id).status === 'planned' && find(A.id).status === 'planned', '重开 C → B/A 连锁重开');
+ok(find(B.id).status === 'planned' && find(A.id).status === 'planned', '重开叶子 C → B/A 连锁重开');
+ok(find(D.id).status === 'done', '兄弟 D 不受影响仍完成');
 
 // ── 给完成的父添新子 → 自动重开(先重新完成 A)
 await api('POST', `/api/task/${C.id}/toggle-done`);

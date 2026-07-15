@@ -416,7 +416,9 @@ async function mutate(fn,okMsg){
 }
 const patchTask=(id,f,msg)=>mutate(()=>api('PATCH','/api/task/'+id,f),msg);
 const createTask=(f,msg)=>mutate(()=>api('POST','/api/task',f),msg||'已创建 ✓');
-const toggleDone=t=>mutate(()=>api('POST',`/api/task/${t.id}/toggle-done`),t.status==='done'?'已重新打开':'完成 ✓');
+const toggleDone=t=>{const leaf=isLeaf(t);
+  return mutate(()=>api('POST',`/api/task/${t.id}/toggle-done`),
+    t.status==='done'?(leaf?'已重新打开':'整棵子树已重开'):(leaf?'完成 ✓':`整棵子树标记完成(${t.leaves}项) ✓`));};
 
 /* ================= 树助手 ================= */
 const kidsOf=id=>KIDS.get(id)||[];
@@ -435,9 +437,11 @@ const kindOf=t=>rootOf(t).kind||'个人成长';
 const kindColor=t=>t.status==='done'?'var(--green)':(kindOf(t)==='工作'?'var(--orange)':'var(--blue)');
 const prClass=p=>p==='P0'?'P0':p==='P1'?'P1':p==='P2'?'P2':'Px';
 const PRCYCLE={null:'P0',P0:'P1',P1:'P2',P2:null};
-const nmBadge=t=>isLeaf(t)?'':`<span class="nm${t.done_leaves===t.leaves?' full':''}" title="父任务不单独勾选:全部子任务完成后自动完成(点行展开勾子任务)">${t.done_leaves}/${t.leaves}</span>`;
-const cbHtml=(t,cls)=>isLeaf(t)?`<input type="checkbox" class="${cls}" data-cb="${t.id}" ${t.status==='done'?'checked':''}>`:'';
+const nmBadge=t=>isLeaf(t)?'':`<span class="nm${t.done_leaves===t.leaves?' full':''}" title="子树完成度:${t.done_leaves}/${t.leaves}(勾父任务=整棵子树一起完成)">${t.done_leaves}/${t.leaves}</span>`;
+const cbHtml=(t,cls)=>`<input type="checkbox" class="${cls}" data-cb="${t.id}" ${t.status==='done'?'checked':''} title="${isLeaf(t)?'':'勾选=整棵子树一起完成 / 取消=整棵重开'}">`;
 function bindCbs(root,cls){root.querySelectorAll('input[data-cb].'+cls).forEach(cb=>{
+  const t0=MAP.get(+cb.dataset.cb);
+  if(t0&&!isLeaf(t0)&&t0.done_leaves>0&&t0.done_leaves<t0.leaves)cb.indeterminate=true;   // 部分完成=半选态
   cb.addEventListener('pointerdown',e=>e.stopPropagation());
   cb.addEventListener('click',e=>e.stopPropagation());
   cb.addEventListener('change',()=>{const t=MAP.get(+cb.dataset.cb);if(t)toggleDone(t);});});}

@@ -175,15 +175,19 @@ app.post('/api/task/:id/toggle-done', (req, res) => {
     const id = Number(req.params.id);
     const t = getTask(id);
     if (!t) return res.status(404).json({ error: 'not found' });
-    const kidCount = db.prepare(`SELECT COUNT(*) c FROM tasks WHERE parent_id=? AND status!='archived'`).get(id).c;
-    if (kidCount > 0) return res.status(400).json({ error: 'non-leaf: 非叶子任务由子任务完成冒泡,不能直接勾' });
     const nowDone = t.status !== 'done';
+    const ids = descendantIds(id);   // 含自身 + 全部子孙:勾父=整棵子树级联,取消=整棵重开
+    const ph = ids.map(() => '?').join(',');
     tx(db, () => {
-      db.prepare(`UPDATE tasks SET status=?, done_at=? WHERE id=?`)
-        .run(nowDone ? 'done' : (t.month || t.start_date || t.parent_id ? 'planned' : 'pool'), nowDone ? today() : null, id);
-      bubbleDone(id);
+      if (nowDone) {
+        db.prepare(`UPDATE tasks SET status='done', done_at=? WHERE id IN (${ph}) AND status!='archived'`).run(today(), ...ids);
+      } else {
+        // 重开整棵子树:各节点按自身字段回落 planned/pool(有月份/日期/父→planned,否则回池)
+        db.prepare(`UPDATE tasks SET status=CASE WHEN month IS NOT NULL OR start_date IS NOT NULL OR parent_id IS NOT NULL THEN 'planned' ELSE 'pool' END, done_at=NULL WHERE id IN (${ph}) AND status!='archived'`).run(...ids);
+      }
+      bubbleDone(id);   // 再向上冒泡更新祖先(兄弟未完成则父保持未完成)
     });
-    audit('task', id, 'toggle-done', { status: t.status }, { status: nowDone ? 'done' : 'planned' });
+    audit('task', id, 'toggle-done', { status: t.status }, { status: nowDone ? 'done' : 'reopen', subtree: ids.length });
     res.json({ ok: true, task: getTask(id) });
   } catch (e) { res.status(500).json({ error: String(e) }); }
 });
