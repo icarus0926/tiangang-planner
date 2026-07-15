@@ -1,0 +1,1049 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>天罡日程 2.0</title>
+<style>
+  :root{
+    --bg:#f6f5f3; --card:#ffffff; --border:#ececec; --text:#1f1f1f;
+    --text2:#77716b; --text3:#a8a29b;
+    --blue:#3b82d6; --orange:#e8833a; --green:#3da56b; --red:#d6534f;
+    --purple:#8b62c9; --gray:#9ca3af;
+    --shadow:0 1px 3px rgba(0,0,0,.04),0 4px 14px rgba(0,0,0,.04);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.55;}
+  .app{display:flex;min-height:100vh}
+  .side{width:210px;flex:none;background:var(--card);border-right:1px solid var(--border);
+    padding:24px 14px;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:6px;}
+  .brand{font-size:16px;font-weight:700;padding:4px 12px 16px;letter-spacing:.5px}
+  .brand .yr{color:var(--text3);font-weight:500;font-size:13px;display:block;margin-top:2px}
+  .nav{display:flex;align-items:center;gap:11px;padding:10px 13px;border-radius:9px;
+    font-size:14.5px;color:var(--text2);cursor:pointer;transition:all .13s;user-select:none}
+  .nav:hover{background:#f2f1ef;color:var(--text)}
+  .nav.on{background:var(--text);color:#fff;font-weight:600}
+  .nav .ic{font-size:16px;width:20px;text-align:center}
+  .side .foot{margin-top:auto;font-size:11.5px;color:var(--text3);padding:0 12px;line-height:1.7}
+  .side .rbtn{margin:8px 12px 0;font-size:12px;padding:7px;border:1px solid var(--border);border-radius:8px;
+    text-align:center;cursor:pointer;color:var(--text2)}
+  .side .rbtn:hover{background:#f2f1ef}
+  .main{flex:1;min-width:0;padding:34px 34px 60px;max-width:1220px}
+  .page{display:none;animation:fade .22s ease}.page.on{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .phead{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:22px}
+  .phead h1{font-size:23px;font-weight:700;letter-spacing:.5px;display:flex;align-items:center}
+  .phead .sub{font-size:13px;color:var(--text3)}
+  .tnav{display:inline-flex;align-items:center;gap:6px;margin-left:16px}
+  .tbtn{width:27px;height:27px;border-radius:50%;border:1px solid var(--border);background:#fff;cursor:pointer;
+    font-size:15px;color:var(--text2);line-height:1;padding:0;transition:all .12s}
+  .tbtn:hover{background:#f1efec;color:var(--text)}
+  .tbtn.td{width:auto;padding:0 12px;border-radius:14px;font-size:12.5px}
+  .rollbtn{padding:4px 12px;border:1px solid var(--border);border-radius:14px;background:#fff;
+    font-size:12px;color:var(--text2);cursor:pointer;font-weight:500;transition:all .12s}
+  .rollbtn:hover{background:#fdf3e7;border-color:#e8b27a;color:#b3742f}
+  h2{font-size:16px;font-weight:650;margin:28px 0 13px;display:flex;align-items:center;gap:8px}
+  h2:first-of-type{margin-top:6px}
+  h2 .bar{width:4px;height:15px;border-radius:2px;background:var(--blue)}
+  h2 .cnt{font-size:12.5px;color:var(--text3);font-weight:400}
+  h2 .hbtns{margin-left:auto;display:flex;gap:8px}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow)}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px}
+  .kpi{padding:18px 20px}.kpi .num{font-size:29px;font-weight:700}.kpi .lab{font-size:13px;color:var(--text2);margin-top:2px}
+  .kpi .sub{font-size:12px;color:var(--text3);margin-top:6px}
+  /* 视图切换 甘特|大纲 */
+  .vswitch{display:inline-flex;border:1px solid var(--border);border-radius:16px;overflow:hidden;background:#fff}
+  .vswitch span{padding:5px 14px;font-size:12.5px;color:var(--text2);cursor:pointer;transition:all .12s}
+  .vswitch span.on{background:var(--text);color:#fff;font-weight:600}
+  /* 目标卡 */
+  .goals{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px}
+  .goal{padding:16px 18px;display:flex;flex-direction:column;gap:8px}
+  .goal .top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .dot{width:9px;height:9px;border-radius:50%;flex:none}
+  .goal .name{font-weight:600;font-size:14.5px;min-width:0}
+  .tag{font-size:11.5px;padding:1px 9px;border-radius:20px;flex:none}
+  .tag.todo{background:#f1f0ee;color:#8a847d}.tag.doing{background:#e3edf9;color:#2f6bb3}.tag.done{background:#e2f3e8;color:#2e7d4f}
+  .goal .crit{font-size:12.5px;color:var(--text2)}
+  .pbar{height:6px;border-radius:3px;background:#f0efed;overflow:hidden}
+  .pbar i{display:block;height:100%;border-radius:3px;background:var(--blue)}
+  .goal .pctline{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text3)}
+  .pin{width:52px;padding:2px 6px;border:1px solid var(--border);border-radius:6px;font-size:12px;text-align:right}
+  .xbtn{width:20px;height:20px;line-height:18px;text-align:center;border-radius:50%;cursor:pointer;font-size:13px;
+    color:var(--text3);opacity:.45;transition:all .12s;flex:none;user-select:none}
+  .xbtn:hover{background:#fbe9e7;color:#c04531;opacity:1}
+  .ebtn{width:20px;height:20px;line-height:18px;text-align:center;border-radius:50%;cursor:pointer;font-size:12px;
+    color:var(--text3);opacity:.45;transition:all .12s;flex:none;user-select:none}
+  .ebtn:hover{background:#f4ecd9;color:#9a6b1f;opacity:1}
+  .goal:hover .xbtn,.goal:hover .ebtn{opacity:1}
+  .addline{display:flex;gap:8px;margin-top:6px}
+  .addline input,.addline select{padding:7px 11px;border:1px solid var(--border);border-radius:8px;font-size:13px}
+  .addline input{flex:1;min-width:0}
+  .addline button{padding:7px 14px;border:none;border-radius:8px;background:var(--text);color:#fff;font-size:12.5px;cursor:pointer;flex:none}
+  .ghostbtn{padding:6px 14px;border:1px dashed #d8d4cf;border-radius:16px;background:transparent;font-size:12.5px;
+    color:var(--text2);cursor:pointer;transition:all .12s}
+  .ghostbtn:hover{border-color:var(--text2);color:var(--text)}
+  /* 任务池:优先级分层 */
+  .pool{padding:18px;margin-bottom:14px}
+  .poolhead{display:flex;align-items:baseline;gap:10px;margin-bottom:12px}
+  .pool h3{font-size:15px;font-weight:650}
+  .pool .cnt{font-size:12.5px;color:var(--text3)}
+  .badge{font-size:11px;padding:0 7px;border-radius:10px;flex:none;font-weight:600;cursor:pointer;user-select:none}
+  .P0{background:#fbe9e7;color:#c04531}.P1{background:#fdf1e3;color:#b2701f}.P2{background:#f1f0ee;color:#8a847d}.Px{background:#f1f0ee;color:#b5aea6}
+  .poollayers{display:flex;flex-direction:column;gap:12px}
+  .pool-layer{display:flex;align-items:flex-start;gap:10px}
+  .pl-lab{flex:none;width:30px;font-size:12px;font-weight:600;color:var(--text3);padding-top:7px}
+  .pl-cards{flex:1;display:flex;flex-wrap:wrap;gap:8px;min-width:0}
+  .pcard{display:inline-flex;align-items:center;gap:5px;padding:6px 8px 6px 10px;border:1px solid var(--border);border-radius:20px;
+    background:#fff;font-size:12.5px;max-width:380px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+  .pcard .pc-t{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pcard .ab{min-width:20px;width:auto;padding:0 3px;height:20px;line-height:18px;text-align:center;border-radius:10px;cursor:pointer;font-size:13px;
+    color:var(--text3);opacity:.5;transition:all .12s;flex:none;user-select:none;white-space:nowrap}
+  .pcard:hover .ab{opacity:1}
+  .ab.in:hover{background:#e3edf9;color:#2f6bb3}
+  .ab.ed:hover{background:#f4ecd9;color:#9a6b1f}
+  .ab.rm:hover{background:#fbe9e7;color:#c04531}
+  .ab.rs:hover{background:#e2f3e8;color:#2e7d4f}
+  /* 规划池行 */
+  .mlist{padding:6px 18px}
+  .mrow{border-top:1px solid #f4f3f1;display:flex;align-items:center;gap:9px;padding:10px 0;min-height:44px}
+  .mrow:first-child{border-top:none}
+  .mrow .name{flex:1;font-size:13.5px;min-width:0;word-break:break-word}
+  .mrow.dim .name{color:var(--text3)}
+  .crumb{font-size:11px;color:#7a6ea8;background:#efeaf9;padding:0 8px;border-radius:10px;flex:none;max-width:220px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .type{font-size:11.5px;padding:1px 9px;border-radius:10px;flex:none}
+  .type.work{background:#fdf1e3;color:#b2701f}.type.growth{background:#e3edf9;color:#2f6bb3}
+  .nm{font-size:11px;color:#2f6bb3;background:#e3edf9;padding:0 8px;border-radius:10px;flex:none;line-height:18px}
+  .nm.full{color:#2e7d4f;background:#e2f3e8}
+  .datechip{font-size:11px;color:var(--text3);background:#f4f3f1;padding:0 8px;border-radius:10px;flex:none;line-height:18px}
+  .mrow .ops{display:flex;gap:2px;flex:none;opacity:.25;transition:opacity .12s}
+  .mrow:hover .ops{opacity:1}
+  .tcb{width:15px;height:15px;flex:none;cursor:pointer;accent-color:var(--green)}
+  .subinp{margin:0 0 10px 26px;display:flex;gap:8px}
+  .subinp input{flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12.5px}
+  /* 甘特 */
+  .mgantt{padding:2px 4px;overflow:visible}
+  .mg-row{display:grid;grid-template-columns:200px 1fr;align-items:center;min-height:30px}
+  @media(max-width:720px){.mg-row{grid-template-columns:110px 1fr}}
+  .mg-label{display:flex;align-items:center;padding-right:10px;font-size:12.5px;color:var(--text2);overflow:hidden;white-space:nowrap}
+  .mg-label .lt{min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .mg-label .lux{flex:none;margin-left:4px;width:16px;height:16px;line-height:14px;text-align:center;border-radius:50%;
+    cursor:pointer;font-size:12px;color:var(--text3);opacity:0;transition:all .12s}
+  .mg-row:hover .mg-label .lux{opacity:.7}
+  .mg-label .lux:hover{background:#fbe9e7;color:#c04531;opacity:1}
+  .mg-label .gcb{width:13px;height:13px;flex:none;margin-right:5px;cursor:pointer;accent-color:var(--green)}
+  .mg-label .nm{margin-left:5px;line-height:16px}
+  .mg-track{position:relative;height:26px;border-left:1px solid #eceae7}
+  .mg-headrow{min-height:26px}.mg-axis{height:22px;border-bottom:1px solid #eceae7}
+  .mg-tick{position:absolute;top:2px;transform:translateX(-50%);color:var(--text3);font-size:11px;white-space:nowrap}
+  .mg-tick::before{content:'';position:absolute;left:50%;top:16px;height:6px;border-left:1px solid #e0ddd8}
+  .mg-today{position:absolute;top:0;bottom:0;width:0;border-left:2px dashed #d6534f;z-index:1}
+  .mg-bar{position:absolute;top:3px;height:20px;border-radius:5px;opacity:.9;cursor:grab;display:flex;align-items:center;
+    touch-action:none;min-width:8px}
+  .mg-bar:active{cursor:grabbing}
+  .mg-bar .mg-txt{color:#fff;font-size:10.5px;font-weight:600;margin:0 auto;pointer-events:none;white-space:nowrap;overflow:hidden}
+  .mg-h{position:absolute;top:0;bottom:0;width:8px;cursor:ew-resize}
+  .mg-h.l{left:-1px}.mg-h.r{right:-1px}
+  .mg-bar.clip{opacity:.72;border-left:2px dotted rgba(255,255,255,.9);border-right:2px dotted rgba(255,255,255,.9)}
+  .mg-bar.env{background:transparent!important;border:1.5px dashed;opacity:.6;cursor:pointer}
+  .mg-bar.env .mg-txt{color:var(--text2)}
+  .mg-bar.ghost{border:1.5px dashed;background:transparent!important;opacity:.5;cursor:pointer;top:4px;height:17px}
+  .mg-bar.ghost:hover{opacity:.85;background:rgba(0,0,0,.03)!important}
+  .mg-bar.done{opacity:.55}
+  .mg-bar.open{box-shadow:0 0 0 2px rgba(59,130,214,.35),0 1px 2px rgba(0,0,0,.08)}
+  .mg-caret{display:inline-block;width:13px;color:var(--text3);font-size:10px;transition:transform .12s;user-select:none;flex:none}
+  .mg-caret.open{transform:rotate(90deg);color:var(--text2)}
+  .mg-label.haskids{cursor:pointer}
+  .mg-row[data-rowtid] .mg-label{cursor:grab}
+  .mg-row.rowdrag{opacity:.35}
+  .mg-row.rowover-b{box-shadow:inset 0 2.5px 0 var(--green)}
+  .mg-row.rowover-a{box-shadow:inset 0 -2.5px 0 var(--green)}
+  .mg-row.openrow .mg-label{white-space:normal}
+  .mg-row.openrow .mg-label .lt{white-space:normal;overflow:visible;text-overflow:clip;word-break:break-word;line-height:1.45;padding:3px 0}
+  .mg-addrow .mg-addinp{width:100%;padding:4px 9px;border:1px dashed #d8d4cf;border-radius:7px;font-size:12px;background:transparent}
+  .mg-addrow .mg-addinp:focus{outline:none;border-color:var(--text2);background:#fff}
+  .mg-drop{border:1.5px dashed #d8d4cf;border-radius:7px;display:flex;align-items:center}
+  .mg-drop .mg-drophint{font-size:11.5px;color:var(--text3);padding-left:10px}
+  .mg-drop.mg-over,.mg-track.mg-over{background:#eef7f0;border-color:var(--green)}
+  .mg-empty{color:var(--text3);font-size:12px;padding-left:8px}
+  /* 大纲 */
+  .olwrap{padding:12px 18px}
+  .olrow{display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid #f6f5f3;min-height:36px}
+  .olrow:first-child{border-top:none}
+  .olrow .name{font-size:13.5px;min-width:0;word-break:break-word}
+  .olrow.done .name{color:var(--text3);text-decoration:line-through}
+  .olrow .ops{margin-left:auto;display:flex;gap:2px;flex:none;opacity:.2;transition:opacity .12s}
+  .olrow:hover .ops{opacity:1}
+  /* 周卡/日页 */
+  .wcol{padding:16px 18px}
+  .wcol h3{font-size:14.5px;font-weight:650;margin-bottom:10px;display:flex;align-items:baseline;gap:8px}
+  .wcol h3 .rng{font-size:12px;color:var(--text3);font-weight:400}
+  .donesec{margin-top:12px;padding-top:10px;border-top:1px dashed var(--border)}
+  .donesec .dh{font-size:12px;color:var(--text3);margin-bottom:4px}
+  .dayrow{display:flex;align-items:center;gap:9px;padding:8px 0;border-top:1px solid #f6f5f3;min-height:38px}
+  .dayrow:first-child{border-top:none}
+  .dayrow .name{flex:1;font-size:13.5px;min-width:0;word-break:break-word}
+  .dayrow.done .name{color:var(--text3);text-decoration:line-through}
+  .dayrow .ops{display:flex;gap:2px;flex:none;opacity:.25;transition:opacity .12s}
+  .dayrow:hover .ops{opacity:1}
+  .srcbadge{font-size:10.5px;padding:0 7px;border-radius:9px;flex:none;line-height:17px}
+  .srcbadge.work{background:#fdf1e3;color:#b2701f}.srcbadge.growth{background:#e3edf9;color:#2f6bb3}.srcbadge.free{background:#f1f0ee;color:#8a847d}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:900px){.grid2{grid-template-columns:1fr}}
+  /* 全景图 */
+  .graphwrap{position:relative}
+  #graphCanvas{cursor:grab;border-radius:12px}
+  #graphCanvas.dragging{cursor:grabbing}
+  #graphTip{position:absolute;display:none;background:#26221d;color:#fff;font-size:12px;padding:6px 10px;border-radius:7px;
+    pointer-events:none;z-index:5;max-width:280px;line-height:1.5}
+  #graphLegend{position:absolute;left:12px;bottom:10px;display:flex;flex-wrap:wrap;gap:4px 14px;font-size:11.5px;color:var(--text2);
+    background:rgba(255,255,255,.85);padding:6px 10px;border-radius:8px;pointer-events:none}
+  #graphLegend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}
+  .gfilters{position:absolute;right:12px;top:10px;display:flex;gap:8px;font-size:12px;background:rgba(255,255,255,.9);
+    padding:6px 10px;border-radius:8px;align-items:center}
+  .gfilters label{display:flex;align-items:center;gap:4px;cursor:pointer;color:var(--text2)}
+  #graphLoading{position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-size:13px;color:var(--text3)}
+  /* toast & 登录 & 弹层 */
+  #toast{position:fixed;left:50%;bottom:34px;transform:translateX(-50%) translateY(18px);background:#26221d;color:#fff;
+    font-size:13px;padding:10px 20px;border-radius:22px;opacity:0;pointer-events:none;transition:all .25s;z-index:99;max-width:80vw}
+  #toast.show{opacity:.95;transform:translateX(-50%)}
+  #login{position:fixed;inset:0;background:var(--bg);z-index:50;display:none;align-items:center;justify-content:center}
+  #login.show{display:flex}
+  #login .box{background:#fff;border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:34px 38px;width:330px}
+  #login h3{font-size:17px;margin-bottom:4px}
+  #login p{font-size:12.5px;color:var(--text3);margin-bottom:16px}
+  #login input{width:100%;padding:10px 13px;border:1px solid var(--border);border-radius:9px;font-size:14px;margin-bottom:12px}
+  #login button{width:100%;padding:10px;border:none;border-radius:9px;background:var(--text);color:#fff;font-size:14px;cursor:pointer}
+  #login .err{color:var(--red);font-size:12px;margin-top:8px;display:none}
+  #modal{position:fixed;inset:0;background:rgba(30,26,20,.35);z-index:60;display:none;align-items:flex-start;justify-content:center;padding-top:12vh}
+  #modal.show{display:flex}
+  #modal .box{background:#fff;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.18);width:min(480px,92vw);padding:20px 22px;max-height:64vh;display:flex;flex-direction:column}
+  #modal h3{font-size:15px;margin-bottom:4px}
+  #modal .mhint{font-size:12px;color:var(--text3);margin-bottom:10px}
+  #modal input{padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-size:13.5px;margin-bottom:10px}
+  #modal .list{overflow-y:auto;flex:1;min-height:0}
+  #modal .cand{display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:8px;cursor:pointer;font-size:13px}
+  #modal .cand:hover{background:#f4f2ef}
+  #modal .cand .cc{font-size:11px;color:var(--text3);margin-left:auto;flex:none}
+  #modal .topopt{border:1px dashed #d8d4cf;border-radius:8px;margin-bottom:8px;color:var(--text2)}
+  .inedit{padding:3px 8px;border:1px solid var(--blue);border-radius:6px;font-size:inherit;font-family:inherit;width:100%;min-width:120px}
+</style>
+</head>
+<body>
+<div id="login"><div class="box">
+  <h3>天罡日程 2.0</h3><p>本地任务树 · SQLite</p>
+  <input id="pw" type="password" placeholder="访问口令" autocomplete="current-password">
+  <button id="pwbtn">进入</button><div class="err" id="pwerr">口令不对,再试试</div>
+</div></div>
+<div id="modal"><div class="box">
+  <h3 id="mdTitle">挂到…</h3><div class="mhint" id="mdHint"></div>
+  <input id="mdSearch" placeholder="搜索任务名…">
+  <div class="list" id="mdList"></div>
+</div></div>
+<div class="app">
+  <aside class="side">
+    <div class="brand">天罡日程<span class="yr">2.0 · 本地任务树</span></div>
+    <div class="nav on" data-page="overview"><span class="ic">◎</span>总览</div>
+    <div class="nav" data-page="year"><span class="ic">🎯</span>年度目标</div>
+    <div class="nav" data-page="month"><span class="ic">📆</span>月度规划</div>
+    <div class="nav" data-page="week"><span class="ic">📅</span>周计划</div>
+    <div class="nav" data-page="day"><span class="ic">☀️</span>每日执行</div>
+    <div class="rbtn" id="reloadBtn">↻ 刷新数据</div>
+    <div class="foot">本地 SQLite<br><span id="footTime"></span></div>
+  </aside>
+  <main class="main">
+    <!-- 总览 -->
+    <section class="page on" id="page-overview">
+      <div class="phead"><h1>总览</h1><span class="sub" id="ovSub"></span></div>
+      <div class="kpis" id="ovKpis"></div>
+      <h2><span class="bar" style="background:var(--purple)"></span>任务全景图<span class="cnt" id="graphCnt"></span></h2>
+      <div class="card graphwrap" style="padding:0">
+        <canvas id="graphCanvas" style="width:100%;height:560px;display:block"></canvas>
+        <div id="graphTip"></div><div id="graphLegend"></div>
+        <div class="gfilters">
+          <label><input type="checkbox" id="gfDone" checked>含已完成</label>
+          <select id="gfGoal" style="font-size:12px;border:1px solid var(--border);border-radius:6px;padding:2px 4px"><option value="">全部簇</option></select>
+          <span class="ghostbtn" id="gfReset" style="padding:2px 10px">复位</span>
+        </div>
+        <div id="graphLoading">布局计算中…</div>
+      </div>
+    </section>
+    <!-- 年度 -->
+    <section class="page" id="page-year">
+      <div class="phead"><h1>年度目标</h1>
+        <button class="ghostbtn" id="addGoalBtn">＋ 新目标</button></div>
+      <div id="goalAddBox" class="card" style="display:none;padding:14px 16px;margin-bottom:14px">
+        <div class="addline">
+          <input id="ngName" placeholder="目标名称">
+          <input id="ngDomain" placeholder="领域(如 副业/健康)" style="flex:0 0 150px">
+          <button id="ngOk">创建</button>
+        </div>
+        <div class="addline"><input id="ngCrit" placeholder="成功标准(可空)"></div>
+      </div>
+      <div class="goals" id="goalCards"></div>
+    </section>
+    <!-- 月度 -->
+    <section class="page" id="page-month">
+      <div class="phead">
+        <h1>月度规划<span class="tnav"><button class="tbtn" id="mPrev">‹</button><button class="tbtn td" id="mToday">今</button><button class="tbtn" id="mNext">›</button></span></h1>
+        <span class="sub" id="mSub"></span>
+        <div class="vswitch" id="mSwitch"><span data-v="gantt" class="on">📊 甘特</span><span data-v="outline">🌲 大纲</span></div>
+      </div>
+      <div id="mGanttWrap">
+        <h2><span class="bar"></span>月度甘特<span class="cnt" id="mgCnt"></span></h2>
+        <div class="card" style="padding:14px 12px"><div id="gantt" class="mgantt"></div></div>
+      </div>
+      <div id="mOutlineWrap" style="display:none">
+        <h2><span class="bar" style="background:var(--green)"></span>任务大纲<span class="cnt" id="olCnt"></span></h2>
+        <div class="card olwrap" id="outline"></div>
+      </div>
+      <h2><span class="bar" style="background:var(--orange)"></span>本月规划池<span class="cnt" id="planCnt"></span>
+        <span class="hbtns"><button class="rollbtn" id="rollMonth">未完成顺延到下月 ⤳</button></span></h2>
+      <div class="card mlist" id="planList"></div>
+      <h2><span class="bar" style="background:var(--gray)"></span>任务池<span class="cnt" id="poolCnt"></span></h2>
+      <div class="card pool">
+        <div class="poollayers" id="poolLayers"></div>
+        <div class="addline" style="margin-top:14px"><input id="npName" placeholder="＋ 添加任务到池(裸任务,后续再排期)"><button id="npOk">添加</button></div>
+      </div>
+      <h2><span class="bar" style="background:var(--green)"></span>已完成<span class="cnt" id="doneCnt"></span></h2>
+      <div class="card pool"><div class="pl-cards" id="doneCards"></div></div>
+    </section>
+    <!-- 周 -->
+    <section class="page" id="page-week">
+      <div class="phead">
+        <h1>周计划<span class="tnav"><button class="tbtn" id="wPrev">‹</button><button class="tbtn td" id="wToday">今</button><button class="tbtn" id="wNext">›</button></span></h1>
+        <span class="sub" id="wSub"></span>
+        <button class="ghostbtn" id="addWeekBtn">＋ 添加周任务</button>
+      </div>
+      <div id="weekAddBox" class="card" style="display:none;padding:12px 16px;margin-bottom:14px">
+        <div class="addline"><input id="nwName" placeholder="周任务名称(默认排本周,可在甘特拖调)"><button id="nwOk">创建</button></div>
+      </div>
+      <h2><span class="bar"></span>本周甘特<span class="cnt" id="wgCnt"></span></h2>
+      <div class="card" style="padding:14px 12px"><div id="weekGantt" class="mgantt"></div></div>
+      <h2><span class="bar" style="background:var(--green)"></span>本周任务</h2>
+      <div class="card wcol"><h3 id="wkh">本周</h3><div id="wkList"></div></div>
+    </section>
+    <!-- 日 -->
+    <section class="page" id="page-day">
+      <div class="phead">
+        <h1>每日执行<span class="tnav"><button class="tbtn" id="dPrev">‹</button><button class="tbtn td" id="dToday">今</button><button class="tbtn" id="dNext">›</button></span></h1>
+        <span class="sub" id="dSub"></span>
+      </div>
+      <div class="grid2">
+        <div class="card wcol">
+          <h3>当日待办<span class="rng" id="dCnt"></span>
+            <span style="margin-left:auto"><button class="rollbtn" id="rollDay">未完成顺延明天 ⤳</button></span></h3>
+          <div class="addline" style="margin:2px 0 10px"><input id="ndText" placeholder="＋ 记一条今日待办(琐事不入任务树,可升格)"><button id="ndOk">添加</button></div>
+          <div id="dayList"></div>
+        </div>
+        <div class="card wcol">
+          <h3>本周任务参考<span class="rng">点 ＋今日 拉入当日待办</span></h3>
+          <div id="dayWeekRef"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+<div id="toast"></div>
+<script>
+/* ================= 基础助手 ================= */
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pad2=n=>String(n).padStart(2,'0');
+function fmtDate(d){return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate());}
+function parseD(s){return new Date(s+'T00:00:00');}
+function addDays(ds,n){const d=parseD(ds);d.setDate(d.getDate()+n);return fmtDate(d);}
+function dayDiff(a,c){return Math.round((parseD(c)-parseD(a))/864e5);}
+function mondayOf(d){const x=new Date(d);const dow=(x.getDay()+6)%7;x.setDate(x.getDate()-dow);x.setHours(0,0,0,0);return x;}
+const today=()=>fmtDate(new Date());
+const ymOf=ds=>ds.slice(0,7);
+function nextMonth(ym,k=1){const[y,m]=ym.split('-').map(Number);const d=new Date(y,m-1+k,1);return d.getFullYear()+'-'+pad2(d.getMonth()+1);}
+function daysInMonth(ym){const[y,m]=ym.split('-').map(Number);return new Date(y,m,0).getDate();}
+const fmtMD=ds=>{const p=(ds||'').split('-');return(+p[1])+'/'+(+p[2]);};
+const WD=['日','一','二','三','四','五','六'];
+function weekLabel(mon){const d=parseD(mon);return `${d.getMonth()+1}月第${Math.ceil((d.getDate()+ (new Date(d.getFullYear(),d.getMonth(),1).getDay()+6)%7 )/7)}周`;}
+let toastTimer=null;
+function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2600);}
+
+/* ================= 状态 ================= */
+let KEY=localStorage.getItem('tg_key')||'';
+let DATA=null,MAP=new Map(),KIDS=new Map();
+let curPage='overview';
+let viewMonth=ymOf(today());
+let viewWeekMon=fmtDate(mondayOf(new Date()));
+let viewDay=today();
+let monthMode='gantt';
+const expanded=new Set();
+let dragged=null;
+
+/* ================= API ================= */
+async function api(method,path,body){
+  const r=await fetch(path,{method,headers:{'Content-Type':'application/json','x-dash-key':KEY},body:body?JSON.stringify(body):undefined});
+  if(r.status===401){showLogin(true);throw Object.assign(new Error('unauthorized'),{status:401});}
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok)throw Object.assign(new Error(j.error||('HTTP '+r.status)),{status:r.status,body:j});
+  return j;
+}
+async function reload(){DATA=await api('GET','/api/data');buildIndex();renderAll();}
+function buildIndex(){
+  MAP=new Map();KIDS=new Map();
+  for(const t of DATA.tasks)MAP.set(t.id,t);
+  for(const t of DATA.tasks){if(t.parent_id!=null){if(!KIDS.has(t.parent_id))KIDS.set(t.parent_id,[]);KIDS.get(t.parent_id).push(t);}}
+  const cmp=(a,b)=>((a.sort??1e12)-(b.sort??1e12))||(a.id-b.id);
+  for(const arr of KIDS.values())arr.sort(cmp);
+}
+async function mutate(fn,okMsg){
+  try{const r=await fn();await reload();if(okMsg)toast(okMsg);return r;}
+  catch(e){if(e.status===401)return;console.error(e);
+    if(e.status===409)toast('该任务今天已经在待办里了');
+    else toast('操作失败:'+e.message);
+    try{await reload();}catch(_){}}
+}
+const patchTask=(id,f,msg)=>mutate(()=>api('PATCH','/api/task/'+id,f),msg);
+const createTask=(f,msg)=>mutate(()=>api('POST','/api/task',f),msg||'已创建 ✓');
+const toggleDone=t=>mutate(()=>api('POST',`/api/task/${t.id}/toggle-done`),t.status==='done'?'已重新打开':'完成 ✓');
+
+/* ================= 树助手 ================= */
+const kidsOf=id=>KIDS.get(id)||[];
+const isLeaf=t=>kidsOf(t.id).length===0;
+function rootOf(t){let c=t;while(c.parent_id!=null&&MAP.has(c.parent_id))c=MAP.get(c.parent_id);return c;}
+function crumbs(t){const n=[];let c=t;while(c.parent_id!=null&&MAP.has(c.parent_id)){c=MAP.get(c.parent_id);n.unshift(c.name);}return n.join(' › ');}
+function subIdsOf(t){const s=new Set([t.id]);const walk=x=>{for(const k of kidsOf(x.id)){s.add(k.id);walk(k);}};walk(t);return s;}
+function subDated(t){const out=[];const walk=x=>{for(const k of kidsOf(x.id)){if(k.start_date&&k.end_date)out.push(k);walk(k);}};walk(t);return out;}
+function effRange(t){
+  if(t.start_date&&t.end_date)return{s:t.start_date,e:t.end_date,env:false};
+  const ds=subDated(t);if(!ds.length)return null;
+  let s=null,e=null;for(const d of ds){if(!s||d.start_date<s)s=d.start_date;if(!e||d.end_date>e)e=d.end_date;}
+  return{s,e,env:true};
+}
+const kindOf=t=>rootOf(t).kind||'个人成长';
+const kindColor=t=>t.status==='done'?'var(--green)':(kindOf(t)==='工作'?'var(--orange)':'var(--blue)');
+const prClass=p=>p==='P0'?'P0':p==='P1'?'P1':p==='P2'?'P2':'Px';
+const PRCYCLE={null:'P0',P0:'P1',P1:'P2',P2:null};
+const nmBadge=t=>isLeaf(t)?'':`<span class="nm${t.done_leaves===t.leaves?' full':''}" title="子树叶子完成度">${t.done_leaves}/${t.leaves}</span>`;
+const cbHtml=(t,cls)=>isLeaf(t)?`<input type="checkbox" class="${cls}" data-cb="${t.id}" ${t.status==='done'?'checked':''}>`:'';
+function bindCbs(root,cls){root.querySelectorAll('input[data-cb].'+cls).forEach(cb=>{
+  cb.addEventListener('pointerdown',e=>e.stopPropagation());
+  cb.addEventListener('click',e=>e.stopPropagation());
+  cb.addEventListener('change',()=>{const t=MAP.get(+cb.dataset.cb);if(t)toggleDone(t);});});}
+function inlineEdit(el,cur,commit){
+  const inp=document.createElement('input');inp.className='inedit';inp.value=cur;
+  el.replaceWith(inp);inp.focus();inp.select();
+  let fin=false;
+  const end=ok=>{if(fin)return;fin=true;const v=inp.value.trim();inp.replaceWith(el);if(ok&&v&&v!==cur)commit(v);};
+  inp.addEventListener('keydown',e=>{if(e.key==='Enter')end(true);if(e.key==='Escape')end(false);});
+  inp.addEventListener('blur',()=>end(true));
+}
+
+/* ================= 渲染总控 ================= */
+function renderAll(){
+  if(!DATA)return;
+  renderOverview();renderYear();renderMonth();renderWeek();renderDay();
+  $('footTime').textContent='数据 '+new Date().toLocaleTimeString();
+}
+function showPage(p){
+  curPage=p;
+  document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('on',n.dataset.page===p));
+  document.querySelectorAll('.page').forEach(s=>s.classList.toggle('on',s.id==='page-'+p));
+  if(p==='overview'&&DATA)buildGraph(true);
+}
+
+/* ================= 总览 ================= */
+function renderOverview(){
+  const ts=DATA.tasks,gs=DATA.goals;
+  const top=ts.filter(t=>!t.parent_id);
+  const cm=ymOf(today());
+  const mTs=ts.filter(t=>t.month===cm);
+  const ex=DATA.executions.filter(e=>e.date===today());
+  const k=(num,lab,sub)=>`<div class="card kpi"><div class="num">${num}</div><div class="lab">${lab}</div><div class="sub">${sub}</div></div>`;
+  $('ovKpis').innerHTML=
+    k(gs.length,'年度目标',gs.filter(g=>g.status==='已完成').length+' 个已完成')+
+    k(ts.length,'任务树节点',top.length+' 棵树 · '+ts.filter(t=>t.parent_id).length+' 个子任务')+
+    k(ts.filter(t=>t.status==='planned').length,'进行中',ts.filter(t=>t.status==='pool').length+' 个待分配在池')+
+    k(mTs.length,'本月计划',mTs.filter(t=>t.status==='done').length+' 项完成')+
+    k(ex.length,'今日待办',ex.filter(e=>e.done).length+' 项完成');
+  $('ovSub').textContent=today()+' 周'+WD[new Date().getDay()];
+}
+
+/* ================= 年度 ================= */
+const DOMCOLORS=['var(--blue)','var(--orange)','var(--purple)','var(--green)','var(--red)','#d4699e','#a07850'];
+const domColor=s=>{let h=0;for(const c of String(s||''))h=(h*31+c.charCodeAt(0))>>>0;return DOMCOLORS[h%DOMCOLORS.length];};
+function renderYear(){
+  const wrap=$('goalCards');
+  wrap.innerHTML=DATA.goals.map(g=>{
+    const mts=DATA.tasks.filter(t=>t.goal_id===g.id);
+    const leaves=mts.reduce((a,t)=>a+t.leaves,0),dl=mts.reduce((a,t)=>a+t.done_leaves,0);
+    const st=g.status==='已完成'?'done':(g.progress>0?'doing':'todo');
+    return `<div class="card goal" data-gid="${g.id}">
+      <div class="top"><span class="dot" style="background:${domColor(g.domain)}"></span>
+        <span class="name gname">${esc(g.name)}</span>
+        <span class="tag ${st}">${esc(g.status||'未开始')}</span>
+        <span style="margin-left:auto;display:flex;gap:2px"><span class="ebtn ged" title="改名">✎</span><span class="xbtn gdel" title="删除目标">×</span></span></div>
+      ${g.criteria?`<div class="crit">${esc(g.criteria)}</div>`:''}
+      <div class="pctline"><div class="pbar" style="flex:1"><i style="width:${g.progress||0}%;background:${domColor(g.domain)}"></i></div>
+        <input class="pin gprog" type="number" min="0" max="100" value="${g.progress||0}">%</div>
+      <div class="pctline"><span>挂载任务 ${mts.length} 个${leaves?` · 叶子 ${dl}/${leaves}`:''}</span>
+        <span class="ghostbtn gaddt" style="margin-left:auto;padding:2px 10px">＋任务</span></div>
+      <div class="addline gaddbox" style="display:none"><input placeholder="挂在此目标下的任务(入池)"><button>创建</button></div>
+    </div>`;
+  }).join('')||'<div style="color:var(--text3);font-size:13px">还没有年度目标,点右上「＋新目标」</div>';
+  wrap.querySelectorAll('.goal').forEach(card=>{
+    const g=DATA.goals.find(x=>x.id===+card.dataset.gid);
+    card.querySelector('.ged').addEventListener('click',()=>inlineEdit(card.querySelector('.gname'),g.name,v=>mutate(()=>api('PATCH','/api/goal/'+g.id,{name:v}),'已改名 ✓')));
+    card.querySelector('.gdel').addEventListener('click',()=>{
+      if(!confirm(`删除目标「${g.name}」?挂载的任务会保留(解除关联)。`))return;
+      mutate(()=>api('DELETE','/api/goal/'+g.id),'目标已删除');});
+    card.querySelector('.gprog').addEventListener('change',e=>{
+      const v=Math.max(0,Math.min(100,+e.target.value||0));
+      mutate(()=>api('PATCH','/api/goal/'+g.id,{progress:v}),'进度已更新 ✓');});
+    const box=card.querySelector('.gaddbox');
+    card.querySelector('.gaddt').addEventListener('click',()=>{box.style.display=box.style.display==='none'?'flex':'none';box.querySelector('input').focus();});
+    const submit=()=>{const v=box.querySelector('input').value.trim();if(!v)return;createTask({name:v,goal_id:g.id},'已创建并挂到目标 ✓');};
+    box.querySelector('button').addEventListener('click',submit);
+    box.querySelector('input').addEventListener('keydown',e=>{if(e.key==='Enter')submit();});
+  });
+}
+
+/* ================= 月度:三池 ================= */
+function renderMonth(){
+  const[y,m]=viewMonth.split('-');
+  $('mSub').textContent=`${y}年${+m}月 · ${daysInMonth(viewMonth)}天`;
+  renderPlanPool();renderPool();renderDoneCards();
+  $('mGanttWrap').style.display=monthMode==='gantt'?'':'none';
+  $('mOutlineWrap').style.display=monthMode==='outline'?'':'none';
+  if(monthMode==='gantt')renderGantt('gantt','month');else renderOutline();
+}
+function renderPool(){
+  const pool=DATA.tasks.filter(t=>!t.parent_id&&t.status==='pool');
+  $('poolCnt').textContent=pool.length+' 个待分配';
+  const groups=[['P0','P0'],['P1','P1'],['P2','P2'],[null,'待定']];
+  $('poolLayers').innerHTML=groups.map(([p,lab])=>{
+    const list=pool.filter(t=>(t.priority||null)===p);
+    if(!list.length)return'';
+    return `<div class="pool-layer"><div class="pl-lab">${lab}</div><div class="pl-cards">${list.map(t=>
+      `<div class="pcard" data-tid="${t.id}"><span class="badge ${prClass(t.priority)}" data-pr="${t.id}" title="点击切换优先级">${t.priority||'–'}</span>
+       <span class="pc-t" title="${esc(t.name)}">${esc(t.name)}</span>
+       <span class="ab ed" data-ed="${t.id}" title="改名">✎</span>
+       <span class="ab in" data-in="${t.id}" title="排入本月规划池">→月</span>
+       <span class="ab rm" data-rm="${t.id}" title="归档">×</span></div>`).join('')}</div></div>`;
+  }).join('')||'<div style="color:var(--text3);font-size:12.5px">池是空的</div>';
+  bindPoolCardOps($('poolLayers'));
+}
+function bindPoolCardOps(root){
+  root.querySelectorAll('[data-pr]').forEach(b=>b.addEventListener('click',()=>{
+    const t=MAP.get(+b.dataset.pr);patchTask(t.id,{priority:PRCYCLE[t.priority??'null']??PRCYCLE[t.priority]??null},'优先级已切换');}));
+  root.querySelectorAll('[data-ed]').forEach(b=>b.addEventListener('click',()=>{
+    const t=MAP.get(+b.dataset.ed);const span=b.parentElement.querySelector('.pc-t');
+    inlineEdit(span,t.name,v=>patchTask(t.id,{name:v},'已改名 ✓'));}));
+  root.querySelectorAll('[data-in]').forEach(b=>b.addEventListener('click',()=>{
+    const t=MAP.get(+b.dataset.in);patchTask(t.id,{month:viewMonth,status:'planned'},`已排入 ${viewMonth} ✓`);}));
+  root.querySelectorAll('[data-rm]').forEach(b=>b.addEventListener('click',()=>{
+    const t=MAP.get(+b.dataset.rm);
+    if(!confirm(`归档「${t.name}」?整棵子树一起归档,可从审计恢复。`))return;
+    mutate(()=>api('DELETE','/api/task/'+t.id),'已归档');}));
+}
+function renderPlanPool(){
+  const list=DATA.tasks.filter(t=>t.month===viewMonth&&t.status==='planned');
+  $('planCnt').textContent=list.length+' 项';
+  $('planList').innerHTML=list.map(t=>{
+    const cr=crumbs(t);
+    return `<div class="mrow" data-tid="${t.id}" draggable="true">
+      ${cbHtml(t,'tcb')}${nmBadge(t)}
+      <span class="name pname">${esc(t.name)}</span>
+      ${cr?`<span class="crumb" title="${esc(cr)}">${esc(cr)}</span>`:''}
+      <span class="type ${kindOf(t)==='工作'?'work':'growth'}">${esc(kindOf(t))}</span>
+      <span class="badge ${prClass(t.priority)}" data-pr="${t.id}" title="点击切换优先级">${t.priority||'–'}</span>
+      ${t.start_date?`<span class="datechip" title="在甘特图中拖拽调整">${fmtMD(t.start_date)}→${fmtMD(t.end_date)}</span>`:''}
+      <span class="ops">
+        <span class="ab ed" data-ed="${t.id}" title="改名">✎</span>
+        ${t.start_date?'':`<span class="ab in" data-sch="${t.id}" title="排期(默认3天,甘特可拖)">⏱</span>`}
+        <span class="ab in" data-sub="${t.id}" title="添加子任务">＋子</span>
+        <span class="ab ed" data-rp="${t.id}" title="挂到其他任务下 / 设为顶层">⇄</span>
+        ${t.parent_id?`<span class="ab in" data-out="${t.id}" title="独立出去(脱离父任务成顶层)">⇱</span>`
+                     :`<span class="ab rm" data-back="${t.id}" title="退回任务池(清空月份与排期)">×</span>`}
+      </span></div>
+      <div class="subinp" data-subinp="${t.id}" style="display:none"><input placeholder="子任务名,回车创建"><button>＋</button></div>`;
+  }).join('')||'<div class="mrow" style="color:var(--text3);font-size:13px">本月规划池是空的:从任务池「→月」排入,或下方直接添加</div>';
+  $('planList').insertAdjacentHTML('beforeend',
+    `<div class="addline" style="margin:10px 0"><input id="nplName" placeholder="＋ 直接添加本月任务"><button id="nplOk">添加</button></div>`);
+  const root=$('planList');
+  bindCbs(root,'tcb');
+  root.querySelectorAll('[data-pr]').forEach(b=>b.addEventListener('click',()=>{
+    const t=MAP.get(+b.dataset.pr);patchTask(t.id,{priority:PRCYCLE[t.priority??'null']??null},'优先级已切换');}));
+  root.querySelectorAll('[data-ed]:not([data-rp])').forEach(b=>b.addEventListener('click',()=>{
+    const t=MAP.get(+b.dataset.ed);const span=b.closest('.mrow').querySelector('.pname');
+    inlineEdit(span,t.name,v=>patchTask(t.id,{name:v},'已改名 ✓'));}));
+  root.querySelectorAll('[data-sch]').forEach(b=>b.addEventListener('click',()=>{
+    const t=MAP.get(+b.dataset.sch);
+    const base=ymOf(today())===viewMonth?today():viewMonth+'-01';
+    patchTask(t.id,{start_date:base,end_date:addDays(base,2)},'已排期,去甘特图拖拽调整 ✓');}));
+  root.querySelectorAll('[data-sub]').forEach(b=>b.addEventListener('click',()=>{
+    const box=root.querySelector(`[data-subinp="${b.dataset.sub}"]`);
+    box.style.display=box.style.display==='none'?'flex':'none';box.querySelector('input').focus();}));
+  root.querySelectorAll('[data-subinp]').forEach(box=>{
+    const submit=()=>{const v=box.querySelector('input').value.trim();if(!v)return;
+      createTask({name:v,parent_id:+box.dataset.subinp},'子任务已创建 ✓');};
+    box.querySelector('button').addEventListener('click',submit);
+    box.querySelector('input').addEventListener('keydown',e=>{if(e.key==='Enter')submit();});});
+  root.querySelectorAll('[data-rp]').forEach(b=>b.addEventListener('click',()=>openReparent(MAP.get(+b.dataset.rp))));
+  root.querySelectorAll('[data-out]').forEach(b=>b.addEventListener('click',()=>{
+    const t=MAP.get(+b.dataset.out);
+    patchTask(t.id,{parent_id:null,month:t.month||viewMonth},'已独立为顶层任务 ✓');}));
+  root.querySelectorAll('[data-back]').forEach(b=>b.addEventListener('click',()=>{
+    const t=MAP.get(+b.dataset.back);
+    patchTask(t.id,{month:null,start_date:null,end_date:null,status:'pool'},'已退回任务池');}));
+  root.querySelectorAll('.mrow[data-tid]').forEach(row=>{
+    row.addEventListener('dragstart',()=>{const t=MAP.get(+row.dataset.tid);dragged={kind:'plan',id:t.id};row.style.opacity=.4;});
+    row.addEventListener('dragend',()=>{row.style.opacity='';dragged=null;});});
+  const nOk=$('nplOk'),nIn=$('nplName');
+  const submitNew=()=>{const v=nIn.value.trim();if(!v)return;createTask({name:v,month:viewMonth},'已加入本月规划 ✓');};
+  nOk.addEventListener('click',submitNew);nIn.addEventListener('keydown',e=>{if(e.key==='Enter')submitNew();});
+}
+function renderDoneCards(){
+  const list=DATA.tasks.filter(t=>!t.parent_id&&t.status==='done')
+    .sort((a,b)=>String(b.done_at).localeCompare(String(a.done_at)));
+  $('doneCnt').textContent=list.length+' 棵已完成';
+  $('doneCards').innerHTML=list.map(t=>
+    `<div class="pcard" style="background:#f6f5f3"><span class="pc-t" style="color:var(--text3)" title="${esc(t.name)} · ${t.done_at||''}">${esc(t.name)}</span>
+     ${t.leaves>1?`<span class="nm full">${t.done_leaves}/${t.leaves}</span>`:''}
+     <span class="ab rs" data-res="${t.id}" title="恢复(整棵子树重新打开)">↩</span>
+     <span class="ab rm" data-arc="${t.id}" title="归档">×</span></div>`).join('')
+    ||'<div style="color:var(--text3);font-size:12.5px">还没有完成的任务</div>';
+  $('doneCards').querySelectorAll('[data-res]').forEach(b=>b.addEventListener('click',()=>{
+    mutate(()=>api('POST',`/api/task/${b.dataset.res}/restore`),'已恢复,整棵子树重新打开 ✓');}));
+  $('doneCards').querySelectorAll('[data-arc]').forEach(b=>b.addEventListener('click',()=>{
+    const t=MAP.get(+b.dataset.arc);
+    if(!confirm(`归档「${t.name}」?`))return;
+    mutate(()=>api('DELETE','/api/task/'+t.id),'已归档');}));
+}
+
+/* ================= 月度:大纲视图 ================= */
+function monthRelevant(t){
+  if(t.month===viewMonth)return true;
+  const s0=viewMonth+'-01',e0=viewMonth+'-'+pad2(daysInMonth(viewMonth));
+  if(t.start_date&&t.end_date&&t.start_date<=e0&&t.end_date>=s0)return true;
+  return kidsOf(t.id).some(monthRelevant);
+}
+function renderOutline(){
+  const roots=DATA.tasks.filter(t=>!t.parent_id&&t.status!=='done'&&monthRelevant(t));
+  const rows=[];
+  const walk=(t,d)=>{rows.push({t,d});if(expanded.has(t.id))kidsOf(t.id).forEach(k=>walk(k,d+1));};
+  roots.forEach(t=>walk(t,0));
+  $('olCnt').textContent=roots.length+' 棵树';
+  $('outline').innerHTML=rows.map(({t,d})=>{
+    const kids=kidsOf(t.id).length;
+    return `<div class="olrow${t.status==='done'?' done':''}" style="padding-left:${d*22}px" data-olid="${t.id}">
+      <span class="mg-caret${expanded.has(t.id)?' open':''}" data-car="${t.id}" style="cursor:pointer;visibility:${kids?'visible':'hidden'}">▸</span>
+      ${cbHtml(t,'tcb')}${nmBadge(t)}
+      <span class="name olname">${esc(t.name)}</span>
+      ${t.month?`<span class="datechip">📌${t.month}</span>`:''}
+      ${t.start_date?`<span class="datechip">${fmtMD(t.start_date)}→${fmtMD(t.end_date)}</span>`:''}
+      ${d===0?`<span class="type ${kindOf(t)==='工作'?'work':'growth'}">${esc(kindOf(t))}</span>`:''}
+      <span class="ops">
+        <span class="ab ed" data-oed="${t.id}" title="改名">✎</span>
+        <span class="ab in" data-osub="${t.id}" title="添加子任务">＋子</span>
+        <span class="ab ed" data-orp="${t.id}" title="挂到… / 设为顶层">⇄</span>
+        ${t.parent_id?`<span class="ab in" data-oout="${t.id}" title="独立出去">⇱</span>`:''}
+        <span class="ab rm" data-oarc="${t.id}" title="归档整棵子树">×</span>
+      </span></div>
+      <div class="subinp" data-osubinp="${t.id}" style="display:none;margin-left:${d*22+26}px"><input placeholder="子任务名,回车创建"><button>＋</button></div>`;
+  }).join('')||'<div style="color:var(--text3);font-size:13px">本月还没有任务</div>';
+  const root=$('outline');
+  bindCbs(root,'tcb');
+  root.querySelectorAll('[data-car]').forEach(c=>c.addEventListener('click',()=>{
+    const id=+c.dataset.car;expanded.has(id)?expanded.delete(id):expanded.add(id);renderOutline();}));
+  root.querySelectorAll('[data-oed]').forEach(b=>b.addEventListener('click',()=>{
+    const t=MAP.get(+b.dataset.oed);const span=b.closest('.olrow').querySelector('.olname');
+    inlineEdit(span,t.name,v=>patchTask(t.id,{name:v},'已改名 ✓'));}));
+  root.querySelectorAll('[data-osub]').forEach(b=>b.addEventListener('click',()=>{
+    const box=root.querySelector(`[data-osubinp="${b.dataset.osub}"]`);
+    box.style.display=box.style.display==='none'?'flex':'none';box.querySelector('input').focus();
+    expanded.add(+b.dataset.osub);}));
+  root.querySelectorAll('[data-osubinp]').forEach(box=>{
+    const submit=()=>{const v=box.querySelector('input').value.trim();if(!v)return;
+      createTask({name:v,parent_id:+box.dataset.osubinp},'子任务已创建 ✓');};
+    box.querySelector('button').addEventListener('click',submit);
+    box.querySelector('input').addEventListener('keydown',e=>{if(e.key==='Enter')submit();});});
+  root.querySelectorAll('[data-orp]').forEach(b=>b.addEventListener('click',()=>openReparent(MAP.get(+b.dataset.orp))));
+  root.querySelectorAll('[data-oout]').forEach(b=>b.addEventListener('click',()=>{
+    const t=MAP.get(+b.dataset.oout);patchTask(t.id,{parent_id:null,month:t.month||viewMonth},'已独立为顶层任务 ✓');}));
+  root.querySelectorAll('[data-oarc]').forEach(b=>b.addEventListener('click',()=>{
+    const t=MAP.get(+b.dataset.oarc);
+    if(!confirm(`归档「${t.name}」?整棵子树一起归档。`))return;
+    mutate(()=>api('DELETE','/api/task/'+t.id),'已归档');}));
+}
+</script>
+<script>
+/* ================= 甘特(树形,月/周同引擎) ================= */
+function ganttBounds(mode){
+  if(mode==='month'){const[y,m]=viewMonth.split('-').map(Number);return{start:new Date(y,m-1,1),days:daysInMonth(viewMonth)};}
+  return{start:parseD(viewWeekMon),days:7};
+}
+function idxRaw(b,ds){const d=parseD(ds);
+  return Math.round((new Date(d.getFullYear(),d.getMonth(),d.getDate())-new Date(b.start.getFullYear(),b.start.getMonth(),b.start.getDate()))/864e5);}
+function indexOfDate(b,ds){return Math.max(0,Math.min(idxRaw(b,ds),b.days-1));}
+function dateAtIndex(b,i){const d=new Date(b.start);d.setDate(b.start.getDate()+i);return fmtDate(d);}
+const prRank=t=>({P0:0,P1:1,P2:2}[t.priority]??3);
+function ganttRoots(b){
+  const s0=fmtDate(b.start),e0=dateAtIndex(b,b.days-1);
+  const vis=t=>{const r=effRange(t);return!!(r&&r.s<=e0&&r.e>=s0);};
+  return DATA.tasks
+    .filter(t=>vis(t)&&(!t.parent_id||!MAP.has(t.parent_id)||!vis(MAP.get(t.parent_id))))
+    .sort((a,c)=>((a.sort??1e12)-(c.sort??1e12))||(prRank(a)-prRank(c))||(a.id-c.id));
+}
+function rerenderTrees(){
+  if(monthMode==='gantt')renderGantt('gantt','month');else renderOutline();
+  renderGantt('weekGantt','week');
+}
+function renderGantt(containerId,mode){
+  const el=$(containerId);if(!el)return;
+  const b=ganttBounds(mode),isMonth=mode==='month';
+  const rows=[];
+  const walk=(t,d,pRange)=>{
+    rows.push({t,d,pRange});
+    if(expanded.has(t.id)){
+      const r=effRange(t);
+      kidsOf(t.id).forEach(k=>walk(k,d+1,r));
+      rows.push({addFor:t,d:d+1});
+    }};
+  const roots=ganttRoots(b);
+  roots.forEach(t=>walk(t,0,null));
+  if(isMonth)$('mgCnt').textContent=roots.length+' 条时间线';else $('wgCnt').textContent=roots.length+' 条时间线';
+  const every=mode==='week'?1:5;
+  const ticks=[];for(let d=0;d<b.days;d++){if(d===0||(d+1)%every===0||d===b.days-1){
+    const dt=new Date(b.start);dt.setDate(b.start.getDate()+d);
+    ticks.push(`<span class="mg-tick" style="left:${d/b.days*100}%">${dt.getMonth()+1}/${dt.getDate()}${mode==='week'?'<br>'+WD[dt.getDay()]:''}</span>`);}}
+  const tRaw=idxRaw(b,today());
+  const todayLine=(tRaw>=0&&tRaw<b.days)?`<span class="mg-today" style="left:${(tRaw+0.5)/b.days*100}%"></span>`:'';
+  let html=`<div class="mg-row mg-headrow"><div class="mg-label"></div><div class="mg-track mg-axis" style="${mode==='week'?'height:34px':''}">${ticks.join('')}${todayLine}</div></div>`;
+  if(!rows.length)html+=`<div class="mg-row"><div class="mg-label"></div><div class="mg-track"><span class="mg-empty">${isMonth?'本月暂无排期:把规划池的任务「⏱排期」或拖到下方放置区':'本周暂无排期'}</span></div></div>`;
+  html+=rows.map(row=>{
+    if(row.addFor)return`<div class="mg-row mg-addrow"><div class="mg-label" style="padding-left:${row.d*16}px"><input class="mg-addinp" data-tadd="${row.addFor.id}" placeholder="＋ 子任务,回车添加"></div><div class="mg-track"></div></div>`;
+    const{t,d,pRange}=row;
+    const kids=kidsOf(t.id).length,open=expanded.has(t.id);
+    const col=kindColor(t);
+    const caret=`<span class="mg-caret${open?' open':''}" style="visibility:${kids?'visible':'hidden'}">▸</span>`;
+    let bar='';
+    if(t.start_date&&t.end_date){
+      const rawS=idxRaw(b,t.start_date),rawE=idxRaw(b,t.end_date);
+      if(rawE<0||rawS>b.days-1){
+        const edge=rawE<0?0:b.days-1;
+        bar=`<div class="mg-bar ro" style="left:${edge/b.days*100}%;width:${100/b.days}%;background:${col};opacity:.3;cursor:default" title="${esc(t.name)} · ${t.start_date}→${t.end_date}(本窗口外)"></div>`;
+      }else{
+        const si=indexOfDate(b,t.start_date),ei=indexOfDate(b,t.end_date);
+        const clip=rawS<0||rawE>b.days-1,handles=(ei-si)>=1;
+        bar=`<div class="mg-bar${clip?' clip':''}${t.status==='done'?' done':''}${open?' open':''}" data-tid="${t.id}"
+          style="left:${si/b.days*100}%;width:${Math.max((ei-si+1)/b.days*100,100/b.days)}%;background:${col}"
+          title="${esc(t.name)} · ${t.start_date}→${t.end_date}${clip?'(延伸出本窗口)':''} · 拖动改期${kids?';父条拖动=整棵子树平移':''}">
+          ${handles?'<span class="mg-h l"></span>':''}<span class="mg-txt">${t.priority||''}</span>${handles?'<span class="mg-h r"></span>':''}</div>`;
+      }
+    }else{
+      const r=effRange(t);
+      if(r&&r.env){
+        const si=indexOfDate(b,r.s),ei=indexOfDate(b,r.e);
+        bar=`<div class="mg-bar env" data-envfor="${t.id}" style="left:${si/b.days*100}%;width:${Math.max((ei-si+1)/b.days*100,100/b.days)}%;border-color:${col}"
+          title="${esc(t.name)} · 由子任务日期包络(${r.s}→${r.e}),点击展开"><span class="mg-txt">${t.done_leaves}/${t.leaves}</span></div>`;
+      }else if(pRange){
+        const pS=indexOfDate(b,pRange.s),pE=indexOfDate(b,pRange.e);
+        bar=`<div class="mg-bar ghost" data-ghost="${t.id}" data-ps="${pS}" data-pe="${pE}" style="left:${pS/b.days*100}%;width:${Math.max((pE-pS+1)/b.days*100,100/b.days)}%;border-color:${col}"
+          title="${esc(t.name)} · 未排期:点击=按父范围排期,拖动/拖两端=调整"><span class="mg-h l"></span><span class="mg-h r"></span></div>`;
+      }
+    }
+    const luxT=t.start_date?'取消排期(退回规划池)':'';
+    return`<div class="mg-row${open?' openrow':''}" data-rowtid="${t.id}" data-depth="${d}">
+      <div class="mg-label${kids?' haskids':''}" data-lab="${t.id}" draggable="true" style="padding-left:${d*16}px" title="${esc(t.name)}${kids?' · 点击展开子任务':''} · 上下拖动调整顺序">
+        ${caret}${cbHtml(t,'gcb')}<span class="lt">${esc(t.name)}</span>${nmBadge(t)}${luxT?`<span class="lux" data-lux="${t.id}" title="${luxT}">×</span>`:''}
+      </div><div class="mg-track">${bar}</div></div>`;
+  }).join('');
+  if(isMonth)html+=`<div class="mg-row" style="min-height:38px"><div class="mg-label"></div><div class="mg-track mg-drop">${todayLine}<span class="mg-drophint">⬆ 从"本月规划池"拖任务到此排期(默认3天,可拖动调整)</span></div></div>`;
+  el.innerHTML=html;
+  bindGantt(el,b,isMonth);
+}
+function bindGantt(el,b,isMonth){
+  const axis=el.querySelector('.mg-axis');
+  const geom=()=>{const r=axis.getBoundingClientRect();return{left:r.left,dayW:r.width/b.days};};
+  bindCbs(el,'gcb');
+  const toggleExpand=id=>{expanded.has(id)?expanded.delete(id):expanded.add(id);rerenderTrees();};
+  /* 实日期条:拖动/两端手柄;父条移动=整棵子树平移 */
+  el.querySelectorAll('.mg-bar[data-tid]').forEach(bar=>{
+    const t=MAP.get(+bar.dataset.tid);if(!t)return;
+    const hasKids=kidsOf(t.id).length>0;
+    let mode=null,startX=0,moved=false;
+    const preview=(ns,ne)=>{const si=indexOfDate(b,ns),ei=indexOfDate(b,ne);
+      bar.style.left=(si/b.days*100)+'%';bar.style.width=(Math.max(ei-si+1,1)/b.days*100)+'%';};
+    const down=(e,m)=>{mode=m;moved=false;startX=e.clientX;bar._ns=t.start_date;bar._ne=t.end_date;
+      e.preventDefault();e.stopPropagation();
+      document.addEventListener('pointermove',move);document.addEventListener('pointerup',up);};
+    const move=e=>{if(mode===null)return;if(Math.abs(e.clientX-startX)>4)moved=true;
+      const g=geom();const delta=Math.round((e.clientX-startX)/g.dayW);
+      let ns=t.start_date,ne=t.end_date;
+      if(mode==='move'){ns=addDays(t.start_date,delta);ne=addDays(t.end_date,delta);}
+      else if(mode==='l'){ns=addDays(t.start_date,delta);if(ns>ne)ns=ne;}
+      else if(mode==='r'){ne=addDays(t.end_date,delta);if(ne<ns)ne=ns;}
+      bar._ns=ns;bar._ne=ne;preview(ns,ne);};
+    const up=async()=>{document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);
+      if(mode===null)return;const wasMode=mode;mode=null;
+      if(!moved){if(hasKids)toggleExpand(t.id);return;}
+      const ns=bar._ns,ne=bar._ne;
+      if(ns===t.start_date&&ne===t.end_date)return;
+      const jobs=[[t.id,ns,ne]];
+      if(wasMode==='move'){
+        const delta=dayDiff(t.start_date,ns);
+        for(const d of subDated(t))jobs.push([d.id,addDays(d.start_date,delta),addDays(d.end_date,delta)]);
+      }
+      await mutate(async()=>{for(const[id,s2,e2]of jobs)await api('PATCH','/api/task/'+id,{start_date:s2,end_date:e2});},
+        `已改期 ${ns}→${ne}${jobs.length>1?` · 子树 ${jobs.length-1} 条同步平移`:''} ✓`);};
+    bar.addEventListener('pointerdown',e=>{if(e.button===0)down(e,'move');});
+    const hl=bar.querySelector('.mg-h.l');if(hl)hl.addEventListener('pointerdown',e=>{if(e.button===0)down(e,'l');});
+    const hr=bar.querySelector('.mg-h.r');if(hr)hr.addEventListener('pointerdown',e=>{if(e.button===0)down(e,'r');});
+  });
+  /* 幽灵条:未排期子任务,点击=父范围整段落定,拖动=窗口内调整 */
+  el.querySelectorAll('.mg-bar.ghost').forEach(bar=>{
+    const t=MAP.get(+bar.dataset.ghost);if(!t)return;
+    const pS=+bar.dataset.ps,pE=+bar.dataset.pe;
+    let mode=null,startX=0,moved=false,origS=0,origE=0;
+    const preview=(si,ei)=>{bar.style.left=(si/b.days*100)+'%';bar.style.width=(Math.max(ei-si+1,1)/b.days*100)+'%';};
+    const down=(e,m)=>{mode=m;moved=false;startX=e.clientX;origS=pS;origE=pE;
+      bar._ns=dateAtIndex(b,pS);bar._ne=dateAtIndex(b,pE);
+      e.preventDefault();e.stopPropagation();
+      document.addEventListener('pointermove',move);document.addEventListener('pointerup',up);};
+    const move=e=>{if(mode===null)return;if(Math.abs(e.clientX-startX)>4)moved=true;
+      const g=geom();const delta=Math.round((e.clientX-startX)/g.dayW);
+      let ss=origS,ee=origE;
+      if(mode==='move'){const span=origE-origS;ss=Math.max(0,Math.min(origS+delta,b.days-1-span));ee=ss+span;}
+      else if(mode==='l'){ss=Math.max(0,Math.min(origS+delta,origE));}
+      else if(mode==='r'){ee=Math.max(origS,Math.min(origE+delta,b.days-1));}
+      bar._ns=dateAtIndex(b,ss);bar._ne=dateAtIndex(b,ee);preview(ss,ee);};
+    const up=async()=>{document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);
+      if(mode===null)return;const wasMode=mode;mode=null;
+      if(wasMode!=='move'&&!moved)return;
+      await mutate(()=>api('PATCH','/api/task/'+t.id,{start_date:bar._ns,end_date:bar._ne}),`「${t.name}」已排期 ${bar._ns}→${bar._ne} ✓`);};
+    bar.addEventListener('pointerdown',e=>{if(e.button===0)down(e,'move');});
+    const hl=bar.querySelector('.mg-h.l');if(hl)hl.addEventListener('pointerdown',e=>{if(e.button===0)down(e,'l');});
+    const hr=bar.querySelector('.mg-h.r');if(hr)hr.addEventListener('pointerdown',e=>{if(e.button===0)down(e,'r');});
+  });
+  /* 信封条/标签点击=展开;× 取消排期;子任务添加输入 */
+  el.querySelectorAll('.mg-bar.env').forEach(bar=>bar.addEventListener('click',()=>toggleExpand(+bar.dataset.envfor)));
+  el.querySelectorAll('.mg-label[data-lab]').forEach(lab=>lab.addEventListener('click',()=>{
+    const id=+lab.dataset.lab;if(kidsOf(id).length)toggleExpand(id);}));
+  el.querySelectorAll('[data-lux]').forEach(x=>{
+    x.addEventListener('pointerdown',e=>e.stopPropagation());
+    x.addEventListener('click',e=>{e.stopPropagation();
+      const t=MAP.get(+x.dataset.lux);if(!t)return;
+      const f={start_date:null,end_date:null};
+      if(!t.parent_id&&!t.month)f.month=viewMonth;
+      patchTask(t.id,f,'已取消排期,退回规划池');});});
+  el.querySelectorAll('.mg-addinp').forEach(inp=>{
+    inp.addEventListener('pointerdown',e=>e.stopPropagation());
+    inp.addEventListener('keydown',e=>{
+      if(e.key!=='Enter')return;
+      const v=inp.value.trim();if(!v)return;
+      createTask({name:v,parent_id:+inp.dataset.tadd},'子任务已创建 ✓');});});
+  /* 标签上下拖动排序:仅限同一父层级(排序≠挂靠) */
+  el.querySelectorAll('.mg-row[data-rowtid]').forEach(row=>{
+    const lab=row.querySelector('.mg-label');
+    lab.addEventListener('dragstart',()=>{dragged={kind:'grow',id:+row.dataset.rowtid};row.classList.add('rowdrag');});
+    lab.addEventListener('dragend',()=>{row.classList.remove('rowdrag');dragged=null;
+      el.querySelectorAll('.rowover-b,.rowover-a').forEach(r=>r.classList.remove('rowover-b','rowover-a'));});
+    row.addEventListener('dragover',e=>{
+      if(!dragged||dragged.kind!=='grow')return;
+      const src=MAP.get(dragged.id),tgt=MAP.get(+row.dataset.rowtid);
+      if(!src||!tgt||src.parent_id!==tgt.parent_id)return;
+      e.preventDefault();
+      const r=row.getBoundingClientRect();const before=e.clientY<r.top+r.height/2;
+      row.classList.toggle('rowover-b',before);row.classList.toggle('rowover-a',!before);});
+    row.addEventListener('dragleave',()=>row.classList.remove('rowover-b','rowover-a'));
+    row.addEventListener('drop',e=>{row.classList.remove('rowover-b','rowover-a');
+      if(!dragged||dragged.kind!=='grow')return;e.preventDefault();
+      const src=MAP.get(dragged.id),tgt=MAP.get(+row.dataset.rowtid);
+      if(!src||!tgt||src.id===tgt.id)return;
+      if(src.parent_id!==tgt.parent_id){toast('只能在同一层级内排序;要移动层级用「⇄挂到…」');return;}
+      const r=row.getBoundingClientRect();const before=e.clientY<r.top+r.height/2;
+      reorderSiblings(src,tgt,before,b);});
+  });
+  /* 从规划池拖入排期(仅月甘特) */
+  if(!isMonth)return;
+  el.querySelectorAll('.mg-track').forEach(track=>{
+    if(track.classList.contains('mg-axis'))return;
+    track.addEventListener('dragover',e=>{if(dragged&&dragged.kind==='plan'){e.preventDefault();track.classList.add('mg-over');}});
+    track.addEventListener('dragleave',()=>track.classList.remove('mg-over'));
+    track.addEventListener('drop',e=>{track.classList.remove('mg-over');
+      if(!dragged||dragged.kind!=='plan')return;e.preventDefault();
+      const t=MAP.get(dragged.id);if(!t)return;
+      const g=geom();let day=Math.floor((e.clientX-g.left)/g.dayW);day=Math.max(0,Math.min(day,b.days-1));
+      const start=dateAtIndex(b,day),end=dateAtIndex(b,Math.min(day+2,b.days-1));
+      patchTask(t.id,{start_date:start,end_date:end},`「${t.name}」已排期 ${start}→${end} ✓`);});
+  });
+}
+function reorderSiblings(src,tgt,before,b){
+  const list=src.parent_id==null?ganttRoots(b).filter(t=>t.parent_id==null):kidsOf(src.parent_id).slice();
+  const without=list.filter(t=>t.id!==src.id);
+  let idx=without.findIndex(t=>t.id===tgt.id);if(idx<0)return;
+  if(!before)idx+=1;
+  without.splice(idx,0,src);
+  const jobs=[];
+  without.forEach((t,i)=>{const no=(i+1)*10;if(t.sort!==no)jobs.push([t.id,no]);});
+  if(!jobs.length)return;
+  mutate(async()=>{for(const[id,no]of jobs)await api('PATCH','/api/task/'+id,{sort:no});},'顺序已保存 ✓');
+}
+
+/* ================= 周页 ================= */
+function renderWeek(){
+  const isCur=viewWeekMon===fmtDate(mondayOf(new Date()));
+  $('wSub').textContent=`${weekLabel(viewWeekMon)} · ${fmtMD(viewWeekMon)} – ${fmtMD(addDays(viewWeekMon,6))}`;
+  renderGantt('weekGantt','week');
+  $('wkh').innerHTML=`${isCur?'本周 ':''}${weekLabel(viewWeekMon)} <span class="rng">${fmtMD(viewWeekMon)} – ${fmtMD(addDays(viewWeekMon,6))}</span>`;
+  const b=ganttBounds('week');
+  const roots=ganttRoots(b);
+  const rowHtml=(t,d)=>{
+    const cr=d===0?crumbs(t):'';
+    return`<div class="dayrow${t.status==='done'?' done':''}" style="padding-left:${d*20}px">
+      ${cbHtml(t,'tcb')}${nmBadge(t)}
+      <span class="name">${esc(t.name)}</span>
+      ${cr?`<span class="crumb" title="${esc(cr)}">${esc(cr)}</span>`:''}
+      ${t.start_date?`<span class="datechip">${fmtMD(t.start_date)}→${fmtMD(t.end_date)}</span>`:''}
+      ${d===0?`<span class="srcbadge ${kindOf(t)==='工作'?'work':'growth'}">${esc(kindOf(t))}</span>`:''}
+    </div>`+kidsOf(t.id).map(k=>rowHtml(k,d+1)).join('');};
+  const undone=roots.filter(t=>t.status!=='done'),done=roots.filter(t=>t.status==='done');
+  $('wkList').innerHTML=(undone.map(t=>rowHtml(t,0)).join('')||'<div style="color:var(--text3);font-size:13px">本周暂无任务</div>')+
+    (done.length?`<div class="donesec"><div class="dh">已完成 ${done.length}</div>${done.map(t=>rowHtml(t,0)).join('')}</div>`:'');
+  bindCbs($('wkList'),'tcb');
+}
+
+/* ================= 日页 ================= */
+function renderDay(){
+  const d=parseD(viewDay);
+  $('dSub').textContent=`${viewDay} 周${WD[d.getDay()]}${viewDay===today()?' · 今天':''}`;
+  const list=DATA.executions.filter(e=>e.date===viewDay);
+  $('dCnt').textContent=` ${list.filter(e=>e.done).length}/${list.length} 完成`;
+  const exRow=e=>{
+    const t=e.task_id?MAP.get(e.task_id):null;
+    const nm=e.task_id?(t?t.name:e.task_name||'(任务)'):e.text;
+    const cr=t?crumbs(t):'';
+    const src=e.task_id?(t?(kindOf(t)==='工作'?'work':'growth'):'growth'):'free';
+    return`<div class="dayrow${e.done?' done':''}">
+      <input type="checkbox" class="tcb" data-ex="${e.id}" ${e.done?'checked':''}>
+      <span class="name">${esc(nm)}</span>
+      ${cr?`<span class="crumb" title="${esc(cr)}">${esc(cr)}</span>`:''}
+      <span class="srcbadge ${src}">${src==='free'?'自由':esc(t?kindOf(t):'任务')}</span>
+      <span class="ops">
+        ${e.task_id?'':`<span class="ab in" data-pro="${e.id}" title="升格为任务(进任务池)">↗</span>`}
+        <span class="ab rm" data-exdel="${e.id}" title="删除这条待办">×</span>
+      </span></div>`;};
+  const undone=list.filter(e=>!e.done),done=list.filter(e=>e.done);
+  $('dayList').innerHTML=(undone.map(exRow).join('')||'<div style="color:var(--text3);font-size:13px">今天还没有待办</div>')+
+    (done.length?`<div class="donesec"><div class="dh">已完成 ${done.length}</div>${done.map(exRow).join('')}</div>`:'');
+  const root=$('dayList');
+  root.querySelectorAll('[data-ex]').forEach(cb=>cb.addEventListener('change',()=>{
+    mutate(()=>api('PATCH','/api/execution/'+cb.dataset.ex,{done:cb.checked}),cb.checked?'完成 ✓':'已重新打开');}));
+  root.querySelectorAll('[data-pro]').forEach(bn=>bn.addEventListener('click',()=>{
+    mutate(()=>api('POST',`/api/execution/${bn.dataset.pro}/promote`),'已升格为任务,进入任务池 ✓');}));
+  root.querySelectorAll('[data-exdel]').forEach(bn=>bn.addEventListener('click',()=>{
+    mutate(()=>api('DELETE','/api/execution/'+bn.dataset.exdel),'已删除');}));
+  /* 本周任务参考 */
+  const wb={start:mondayOf(parseD(viewDay)),days:7};
+  const roots=ganttRoots(wb);
+  const refRow=(t,d)=>{
+    const inToday=DATA.executions.some(e=>e.date===viewDay&&e.task_id===t.id);
+    return`<div class="dayrow${t.status==='done'?' done':''}" style="padding-left:${d*20}px">
+      ${isLeaf(t)?'':nmBadge(t)}
+      <span class="name">${esc(t.name)}</span>
+      ${t.start_date?`<span class="datechip">${fmtMD(t.start_date)}→${fmtMD(t.end_date)}</span>`:''}
+      ${isLeaf(t)&&t.status!=='done'?`<span class="ops" style="opacity:1"><span class="ab in" data-addex="${t.id}" title="拉入当日待办">${inToday?'已在今日':'＋今日'}</span></span>`:''}
+    </div>`+kidsOf(t.id).map(k=>refRow(k,d+1)).join('');};
+  $('dayWeekRef').innerHTML=roots.map(t=>refRow(t,0)).join('')||'<div style="color:var(--text3);font-size:13px">本周暂无任务</div>';
+  $('dayWeekRef').querySelectorAll('[data-addex]').forEach(bn=>bn.addEventListener('click',()=>{
+    mutate(()=>api('POST','/api/execution',{task_id:+bn.dataset.addex,date:viewDay}),'已拉入当日待办 ✓');}));
+}
+
+/* ================= 挂靠选择器 ================= */
+let mdTask=null;
+function openReparent(t){
+  mdTask=t;
+  $('mdTitle').textContent=`「${t.name}」挂到…`;
+  $('mdHint').textContent='点击选择新的父任务(排除自己与子孙);搜索过滤。挂靠只改层级,不动排期。';
+  $('mdSearch').value='';renderMdList('');
+  $('modal').classList.add('show');$('mdSearch').focus();
+}
+function renderMdList(q){
+  if(!mdTask)return;
+  const ex=subIdsOf(mdTask);
+  const cands=DATA.tasks.filter(x=>!ex.has(x.id)&&(!q||x.name.toLowerCase().includes(q)));
+  $('mdList').innerHTML=(mdTask.parent_id?`<div class="cand topopt" data-cand="top">⇱ 设为顶层任务(独立出去)</div>`:'')+
+    cands.slice(0,80).map(c=>`<div class="cand" data-cand="${c.id}">
+      <span class="dot" style="background:${kindColor(c)}"></span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.name)}</span>
+      <span class="cc">${esc(crumbs(c)||'顶层')}</span></div>`).join('');
+  $('mdList').querySelectorAll('.cand').forEach(cd=>cd.addEventListener('click',()=>{
+    const v=cd.dataset.cand;const t=mdTask;closeModal();
+    if(v==='top')patchTask(t.id,{parent_id:null,month:t.month||viewMonth},'已独立为顶层任务 ✓');
+    else patchTask(t.id,{parent_id:+v},'已挂靠 ✓');}));
+}
+function closeModal(){$('modal').classList.remove('show');mdTask=null;}
+
+/* ================= 全景图(阶段3.5) ================= */
+function buildGraph(){const l=$('graphLoading');if(l){l.style.display='flex';l.textContent='任务全景图构建中(阶段3.5)…';}}
+
+/* ================= 登录与启动 ================= */
+function showLogin(s){$('login').classList.toggle('show',s);if(s)setTimeout(()=>$('pw').focus(),50);}
+async function tryLogin(){
+  KEY=$('pw').value.trim();
+  try{await reload();localStorage.setItem('tg_key',KEY);$('pwerr').style.display='none';showLogin(false);}
+  catch(e){$('pwerr').style.display='block';}
+}
+(function boot(){
+  document.querySelectorAll('.nav').forEach(n=>n.addEventListener('click',()=>showPage(n.dataset.page)));
+  $('reloadBtn').addEventListener('click',()=>reload().then(()=>toast('已刷新 ✓')).catch(()=>{}));
+  $('pwbtn').addEventListener('click',tryLogin);
+  $('pw').addEventListener('keydown',e=>{if(e.key==='Enter')tryLogin();});
+  $('modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal();});
+  $('mdSearch').addEventListener('input',()=>renderMdList($('mdSearch').value.trim().toLowerCase()));
+  /* 时间导航 */
+  $('mPrev').addEventListener('click',()=>{viewMonth=nextMonth(viewMonth,-1);renderMonth();});
+  $('mNext').addEventListener('click',()=>{viewMonth=nextMonth(viewMonth,1);renderMonth();});
+  $('mToday').addEventListener('click',()=>{viewMonth=ymOf(today());renderMonth();});
+  $('wPrev').addEventListener('click',()=>{viewWeekMon=addDays(viewWeekMon,-7);renderWeek();});
+  $('wNext').addEventListener('click',()=>{viewWeekMon=addDays(viewWeekMon,7);renderWeek();});
+  $('wToday').addEventListener('click',()=>{viewWeekMon=fmtDate(mondayOf(new Date()));renderWeek();});
+  $('dPrev').addEventListener('click',()=>{viewDay=addDays(viewDay,-1);renderDay();});
+  $('dNext').addEventListener('click',()=>{viewDay=addDays(viewDay,1);renderDay();});
+  $('dToday').addEventListener('click',()=>{viewDay=today();renderDay();});
+  /* 甘特|大纲切换 */
+  $('mSwitch').querySelectorAll('span').forEach(s=>s.addEventListener('click',()=>{
+    monthMode=s.dataset.v;
+    $('mSwitch').querySelectorAll('span').forEach(x=>x.classList.toggle('on',x===s));
+    renderMonth();}));
+  /* 顺延 */
+  $('rollMonth').addEventListener('click',async()=>{
+    const to=nextMonth(viewMonth,1);
+    const r=await mutate(()=>api('POST','/api/rollover',{scope:'month',from:viewMonth,to}));
+    if(r)toast(r.count?`已把 ${r.count} 项未完成顺延到 ${to} ✓`:'本月没有可顺延的未完成任务');});
+  $('rollDay').addEventListener('click',async()=>{
+    const to=addDays(viewDay,1);
+    const r=await mutate(()=>api('POST','/api/rollover',{scope:'day',from:viewDay,to}));
+    if(r)toast(r.count?`已把 ${r.count} 条未完成待办顺延到 ${to} ✓`:'没有可顺延的未完成待办');});
+  /* 创建矩阵 */
+  $('addGoalBtn').addEventListener('click',()=>{const b=$('goalAddBox');b.style.display=b.style.display==='none'?'block':'none';$('ngName').focus();});
+  $('ngOk').addEventListener('click',()=>{
+    const name=$('ngName').value.trim();if(!name)return;
+    mutate(()=>api('POST','/api/goal',{name,domain:$('ngDomain').value.trim()||null,criteria:$('ngCrit').value.trim()||null}),'目标已创建 ✓')
+      .then(()=>{$('ngName').value='';$('ngCrit').value='';$('goalAddBox').style.display='none';});});
+  const npSubmit=()=>{const v=$('npName').value.trim();if(!v)return;$('npName').value='';createTask({name:v},'已入池 ✓');};
+  $('npOk').addEventListener('click',npSubmit);
+  $('npName').addEventListener('keydown',e=>{if(e.key==='Enter')npSubmit();});
+  $('addWeekBtn').addEventListener('click',()=>{const b=$('weekAddBox');b.style.display=b.style.display==='none'?'block':'none';$('nwName').focus();});
+  const nwSubmit=()=>{const v=$('nwName').value.trim();if(!v)return;$('nwName').value='';
+    createTask({name:v,start:viewWeekMon,end:addDays(viewWeekMon,6)},'周任务已创建(默认排本周) ✓');};
+  $('nwOk').addEventListener('click',nwSubmit);
+  $('nwName').addEventListener('keydown',e=>{if(e.key==='Enter')nwSubmit();});
+  const ndSubmit=()=>{const v=$('ndText').value.trim();if(!v)return;$('ndText').value='';
+    mutate(()=>api('POST','/api/execution',{text:v,date:viewDay}),'已记下 ✓');};
+  $('ndOk').addEventListener('click',ndSubmit);
+  $('ndText').addEventListener('keydown',e=>{if(e.key==='Enter')ndSubmit();});
+  /* 首载 */
+  if(!KEY)showLogin(true);
+  else reload().catch(e=>{if(e.status!==401){toast('加载失败:'+e.message);}});
+})();
+</script>
+</body>
+</html>

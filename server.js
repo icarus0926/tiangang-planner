@@ -4,7 +4,7 @@
  * - 任务=递归树(parent_id);完成自下而上冒泡;字段点亮决定层级可见性
  * - 全部写操作记 audit;启动+每24h 自动备份
  */
-try { require('dotenv').config(); } catch (e) { /* 无 dotenv 时用系统环境变量 */ }
+try { require('dotenv').config({ path: __dirname + '/.env' }); } catch (e) { /* 无 dotenv 时用系统环境变量 */ }
 const express = require('express');
 const path = require('path');
 const { open, tx, backup } = require('./db.js');
