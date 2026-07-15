@@ -296,6 +296,8 @@
         <div class="addline"><input id="ngCrit" placeholder="成功标准(可空)"></div>
       </div>
       <div class="goals" id="goalCards"></div>
+      <h2><span class="bar" style="background:var(--green)"></span>本年已完成<span class="cnt" id="yDoneCnt"></span></h2>
+      <div class="card pool"><div class="pl-cards" id="yDoneCards"></div></div>
     </section>
     <!-- 月度 -->
     <section class="page" id="page-month">
@@ -435,6 +437,17 @@ function effRange(t){
 }
 const kindOf=t=>rootOf(t).kind||'个人成长';
 const kindColor=t=>t.status==='done'?'var(--green)':(kindOf(t)==='工作'?'var(--orange)':'var(--blue)');
+/* 完成记录:每个完成簇只取最高 done 节点(父非done),done_at 落在时间窗内 → 供年/月/周/日各维度"已完成"清单;统一按 done_at=完成历史 */
+function doneRoots(inWin){
+  return DATA.tasks.filter(t=>t.status==='done'&&t.done_at
+    &&(t.parent_id==null||(MAP.get(t.parent_id)||{}).status!=='done')
+    &&inWin(t.done_at))
+    .sort((a,b)=>String(b.done_at).localeCompare(String(a.done_at)));
+}
+const winYear=y=>d=>d.slice(0,4)===y;
+const winMonth=vm=>d=>d.slice(0,7)===vm;
+const winWeek=mon=>d=>d>=mon&&d<=addDays(mon,6);
+const winDay=vd=>d=>d===vd;
 const prClass=p=>p==='P0'?'P0':p==='P1'?'P1':p==='P2'?'P2':'Px';
 const PRCYCLE={null:'P0',P0:'P1',P1:'P2',P2:null};
 const nmBadge=t=>isLeaf(t)?'':`<span class="nm${t.done_leaves===t.leaves?' full':''}" title="子树完成度:${t.done_leaves}/${t.leaves}(勾父任务=整棵子树一起完成)">${t.done_leaves}/${t.leaves}</span>`;
@@ -522,6 +535,20 @@ function renderYear(){
     box.querySelector('button').addEventListener('click',submit);
     box.querySelector('input').addEventListener('keydown',e=>{if(e.key==='Enter')submit();});
   });
+  // 本年已完成
+  const yList=doneRoots(winYear(today().slice(0,4)));
+  $('yDoneCnt').textContent=yList.length+' 项(本年完成)';
+  $('yDoneCards').innerHTML=yList.map(t=>{
+    const go=t.goal_id?DATA.goals.find(x=>x.id===rootOf(t).goal_id):null;const cr=crumbs(t);
+    return `<div class="pcard" style="background:#f6f5f3">
+      <span class="pc-t" style="color:var(--text3)" title="${esc(t.name)} · 完成于 ${t.done_at||''}">${esc(t.name)}</span>
+      ${go?`<span class="crumb" title="所属目标">${esc(go.name.slice(0,10))}</span>`:cr?`<span class="crumb" title="${esc(cr)}">${esc(cr)}</span>`:''}
+      ${t.leaves>1?`<span class="nm full">${t.done_leaves}/${t.leaves}</span>`:''}
+      <span class="datechip">✓ ${fmtMD(t.done_at)}</span>
+      <span class="ab rs" data-yres="${t.id}" title="恢复(重新打开)">↩</span></div>`;
+  }).join('')||'<div style="color:var(--text3);font-size:12.5px">本年还没有完成的任务</div>';
+  $('yDoneCards').querySelectorAll('[data-yres]').forEach(b=>b.addEventListener('click',()=>
+    mutate(()=>api('POST',`/api/task/${b.dataset.yres}/restore`),'已恢复,重新打开 ✓')));
 }
 
 /* ================= 月度:三池 ================= */
@@ -633,15 +660,17 @@ function renderPlanPool(){
   nOk.addEventListener('click',submitNew);nIn.addEventListener('keydown',e=>{if(e.key==='Enter')submitNew();});
 }
 function renderDoneCards(){
-  const list=DATA.tasks.filter(t=>!t.parent_id&&t.status==='done')
-    .sort((a,b)=>String(b.done_at).localeCompare(String(a.done_at)));
-  $('doneCnt').textContent=list.length+' 棵已完成';
-  $('doneCards').innerHTML=list.map(t=>
-    `<div class="pcard" style="background:#f6f5f3"><span class="pc-t" style="color:var(--text3)" title="${esc(t.name)} · ${t.done_at||''}">${esc(t.name)}</span>
+  const list=doneRoots(winMonth(viewMonth));
+  $('doneCnt').textContent=list.length+' 项(本月完成)';
+  $('doneCards').innerHTML=list.map(t=>{
+    const cr=crumbs(t);
+    return `<div class="pcard" style="background:#f6f5f3"><span class="pc-t" style="color:var(--text3)" title="${esc(t.name)} · 完成于 ${t.done_at||''}">${esc(t.name)}</span>
+     ${cr?`<span class="crumb" title="${esc(cr)}">${esc(cr)}</span>`:''}
      ${t.leaves>1?`<span class="nm full">${t.done_leaves}/${t.leaves}</span>`:''}
+     <span class="datechip">✓ ${fmtMD(t.done_at)}</span>
      <span class="ab rs" data-res="${t.id}" title="恢复(整棵子树重新打开)">↩</span>
-     <span class="ab rm" data-arc="${t.id}" title="归档">×</span></div>`).join('')
-    ||'<div style="color:var(--text3);font-size:12.5px">还没有完成的任务</div>';
+     <span class="ab rm" data-arc="${t.id}" title="归档">×</span></div>`;}).join('')
+    ||'<div style="color:var(--text3);font-size:12.5px">本月还没有完成的任务</div>';
   $('doneCards').querySelectorAll('[data-res]').forEach(b=>b.addEventListener('click',()=>{
     mutate(()=>api('POST',`/api/task/${b.dataset.res}/restore`),'已恢复,整棵子树重新打开 ✓');}));
   $('doneCards').querySelectorAll('[data-arc]').forEach(b=>b.addEventListener('click',()=>{
@@ -939,9 +968,10 @@ function renderWeek(){
       h+=`<div class="subinp" data-wsubinp="${t.id}" style="margin:2px 0 10px ${d*20+30}px"><input placeholder="添加一个子任务,回车确认…"><button>添加</button></div>`;
     }
     return h;};
-  const undone=roots.filter(t=>t.status!=='done'),done=roots.filter(t=>t.status==='done');
+  const undone=roots.filter(t=>t.status!=='done');
+  const done=doneRoots(winWeek(viewWeekMon));   // 本周完成:按 done_at 落在周窗,不看排期
   $('wkList').innerHTML=(undone.map(t=>rowHtml(t,0)).join('')||'<div style="color:var(--text3);font-size:13px">本周暂无任务</div>')+
-    (done.length?`<div class="donesec"><div class="dh">已完成 ${done.length}</div>${done.map(t=>rowHtml(t,0)).join('')}</div>`:'');
+    (done.length?`<div class="donesec"><div class="dh">本周完成 ${done.length}</div>${done.map(t=>rowHtml(t,0)).join('')}</div>`:'');
   bindCbs($('wkList'),'tcb');
   $('wkList').querySelectorAll('[data-wrow]').forEach(row=>row.addEventListener('click',e=>{
     if(e.target.closest('.chipbtn,input,button'))return;
@@ -978,9 +1008,21 @@ function renderDay(){
         <span class="ab rm" data-exdel="${e.id}" title="删除这条待办">×</span>
       </span></div>`;};
   const undone=list.filter(e=>!e.done),done=list.filter(e=>e.done);
+  // 今日完成的任务(通过勾任务复选框完成的,不重复已在待办里勾掉的)
+  const doneExecTaskIds=new Set(list.filter(e=>e.done&&e.task_id).map(e=>e.task_id));
+  const doneTaskToday=doneRoots(winDay(viewDay)).filter(t=>!doneExecTaskIds.has(t.id));
+  const doneTaskRow=t=>{const cr=crumbs(t);
+    return`<div class="dayrow done"><span class="name">${esc(t.name)}</span>
+      ${cr?`<span class="crumb" title="${esc(cr)}">${esc(cr)}</span>`:''}
+      ${t.leaves>1?`<span class="nm full">${t.done_leaves}/${t.leaves}</span>`:''}
+      <span class="srcbadge ${kindOf(t)==='工作'?'work':'growth'}">${esc(kindOf(t))}</span>
+      <span class="ops" style="opacity:1"><span class="ab rs" data-tres="${t.id}" title="重新打开">↩</span></span></div>`;};
   $('dayList').innerHTML=(undone.map(exRow).join('')||'<div style="color:var(--text3);font-size:13px">今天还没有待办</div>')+
-    (done.length?`<div class="donesec"><div class="dh">已完成 ${done.length}</div>${done.map(exRow).join('')}</div>`:'');
+    (done.length?`<div class="donesec"><div class="dh">今日完成待办 ${done.length}</div>${done.map(exRow).join('')}</div>`:'')+
+    (doneTaskToday.length?`<div class="donesec"><div class="dh">今日完成任务 ${doneTaskToday.length}</div>${doneTaskToday.map(doneTaskRow).join('')}</div>`:'');
   const root=$('dayList');
+  root.querySelectorAll('[data-tres]').forEach(b=>b.addEventListener('click',()=>
+    mutate(()=>api('POST',`/api/task/${b.dataset.tres}/toggle-done`),'已重新打开')));
   root.querySelectorAll('[data-ex]').forEach(cb=>cb.addEventListener('change',()=>{
     mutate(()=>api('PATCH','/api/execution/'+cb.dataset.ex,{done:cb.checked}),cb.checked?'完成 ✓':'已重新打开');}));
   root.querySelectorAll('[data-pro]').forEach(bn=>bn.addEventListener('click',()=>{
