@@ -1001,7 +1001,7 @@ function graphStep(nodes,edges,idx,cool){
     const a=nodes[i],b=nodes[j];
     let dx=a.x-b.x,dy=a.y-b.y;const d2=dx*dx+dy*dy+0.01;
     if(d2>160000)continue;
-    const d=Math.sqrt(d2),f=2600/d2;
+    const d=Math.sqrt(d2),f=4200/d2;
     dx/=d;dy/=d;a.fx+=dx*f;a.fy+=dy*f;b.fx-=dx*f;b.fy-=dy*f;
   }
   for(const e of edges){
@@ -1012,9 +1012,9 @@ function graphStep(nodes,edges,idx,cool){
   }
   for(const n of nodes){
     if(n.pin)continue;
-    n.fx+=-n.x*0.018;n.fy+=-n.y*0.018;
-    n.x+=Math.max(-14,Math.min(14,n.fx))*cool;
-    n.y+=Math.max(-14,Math.min(14,n.fy))*cool;
+    n.fx+=-n.x*0.011;n.fy+=-n.y*0.011;
+    n.x+=Math.max(-24,Math.min(24,n.fx))*cool;
+    n.y+=Math.max(-24,Math.min(24,n.fy))*cool;
   }
 }
 function graphSimulate(nodes,edges,ticks){
@@ -1027,9 +1027,9 @@ function gKick(a){gAlpha=Math.max(gAlpha,a);if(!gAnim)gLoop();}
 function gLoop(){
   gAnim=setTimeout(()=>{
     const G=GRAPH;
-    if(!G||curPage!=='overview'||gAlpha<0.02){gAnim=null;gAlpha=0;return;}
+    if(!G||curPage!=='overview'||gAlpha<0.015){gAnim=null;gAlpha=0;return;}
     graphStep(G.nodes,G.edges,G.idx,gAlpha);
-    gAlpha*=0.97;
+    gAlpha*=0.975;
     drawGraph();
     gLoop();
   },33);
@@ -1056,7 +1056,7 @@ function buildGraph(force){
   goals.forEach((g,i)=>{
     const a=i/N*Math.PI*2,R=focusGoal?0:300;
     add({id:'g'+g.id,label:g.name,type:'goal',hex:domHex(g.domain),r:8+Math.min(6,DATA.tasks.filter(t=>t.goal_id===g.id).length),nav:{page:'year'},x0:Math.cos(a)*R,y0:Math.sin(a)*R,g});
-    if(!focusGoal)edges.push(['@c','g'+g.id,200]);
+    if(!focusGoal)edges.push(['@c','g'+g.id,280]);
   });
   const topFree=[];
   const addTask=(t,parentNid,depth)=>{
@@ -1065,7 +1065,7 @@ function buildGraph(force){
     add({id:'t'+t.id,label:t.name,type:'task',hex:taskHex(t),r:4.5+Math.min(6,Math.sqrt(t.leaves)*1.6),
       active:taskActive(t),nav:{page:'month',task:t},t,
       x0:p?p.x+Math.cos(t.id)*46:0,y0:p?p.y+Math.sin(t.id)*46:0});
-    edges.push([parentNid,'t'+t.id,depth===0?95:52]);
+    edges.push([parentNid,'t'+t.id,depth===0?135:75]);
     kidsOf(t.id).forEach(k=>addTask(k,'t'+t.id,depth+1));
   };
   for(const t of DATA.tasks){
@@ -1077,7 +1077,7 @@ function buildGraph(force){
   if(!focusGoal&&topFree.length){
     const a=(goals.length)/N*Math.PI*2;
     add({id:'@free',label:'独立任务',type:'hub',hex:'#8a8378',r:10,x0:Math.cos(a)*300,y0:Math.sin(a)*300});
-    edges.push(['@c','@free',200]);
+    edges.push(['@c','@free',280]);
     topFree.forEach(t=>addTask(t,'@free',0));
   }
   const warm=Object.keys(old).length>0;
@@ -1145,7 +1145,12 @@ function graphJump(n){
 (function bindGraphUI(){
   const cv=$('graphCanvas');if(!cv)return;
   const tip=$('graphTip');
-  let drag=null,panning=false,px=0,py=0,downAt=null;
+  let drag=null,dragKids=null,panning=false,px=0,py=0,downAt=null;
+  /* 拖动时整棵子树跟手平移(松手后物理只做微调,不再出现拖尾) */
+  const gDesc=id=>{const out=[],st=[id];
+    while(st.length){const cur=st.pop();
+      for(const e of GRAPH.edges)if(e[0]===cur){out.push(e[1]);st.push(e[1]);}}
+    return out.map(k=>GRAPH.nodes[GRAPH.idx[k]]).filter(Boolean);};
   const hit=(mx,my)=>{const G=GRAPH;if(!G)return null;
     for(let i=G.nodes.length-1;i>=0;i--){const n=G.nodes[i];
       const x=n.x*G.scale+G.tx,y=n.y*G.scale+G.ty,r=Math.max(6,n.r*G.scale);
@@ -1153,10 +1158,15 @@ function graphJump(n){
     return null;};
   const pos=e=>{const b=cv.getBoundingClientRect();return[e.clientX-b.left,e.clientY-b.top];};
   cv.addEventListener('pointerdown',e=>{const[mx,my]=pos(e);const n=hit(mx,my);
-    downAt=[mx,my];if(n&&n.type!=='center'){drag=n;}else{panning=true;px=mx;py=my;}
+    downAt=[mx,my];if(n&&n.type!=='center'){drag=n;dragKids=gDesc(n.id);}else{panning=true;px=mx;py=my;}
     cv.classList.add('dragging');try{cv.setPointerCapture(e.pointerId);}catch(_){}});
   cv.addEventListener('pointermove',e=>{const[mx,my]=pos(e);const G=GRAPH;if(!G)return;
-    if(drag){drag.x=(mx-G.tx)/G.scale;drag.y=(my-G.ty)/G.scale;drag.pin=true;gKick(0.55);return;}
+    if(drag){
+      const nx=(mx-G.tx)/G.scale,ny=(my-G.ty)/G.scale;
+      const ddx=nx-drag.x,ddy=ny-drag.y;
+      drag.x=nx;drag.y=ny;drag.pin=true;
+      if(dragKids)for(const k of dragKids){k.x+=ddx;k.y+=ddy;}
+      gKick(0.4);return;}
     if(panning){G.tx+=mx-px;G.ty+=my-py;px=mx;py=my;drawGraph();return;}
     const n=hit(mx,my);
     if(n){tip.style.display='block';tip.style.left=(mx+14)+'px';tip.style.top=(my+10)+'px';
@@ -1169,7 +1179,7 @@ function graphJump(n){
     const clicked=downAt&&Math.abs(mx-downAt[0])<4&&Math.abs(my-downAt[1])<4;
     if(clicked){const n=hit(mx,my);if(n)graphJump(n);}
     if(drag)gKick(0.35);   // 松手后让簇继续找平衡直至静止
-    drag=null;panning=false;downAt=null;cv.classList.remove('dragging');});
+    drag=null;dragKids=null;panning=false;downAt=null;cv.classList.remove('dragging');});
   cv.addEventListener('wheel',e=>{e.preventDefault();const G=GRAPH;if(!G)return;
     const[mx,my]=pos(e);
     const f=e.deltaY<0?1.15:1/1.15;
