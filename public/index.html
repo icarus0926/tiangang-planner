@@ -265,6 +265,9 @@
         <div id="graphTip"></div><div id="graphLegend"></div>
         <div class="gfilters">
           <label><input type="checkbox" id="gfDone" checked>含已完成</label>
+          <select id="gfScale" title="按时间尺度筛选:年=挂年度目标的树 / 月=本月计划 / 周=本周排期 / 日=今日待办关联" style="font-size:12px;border:1px solid var(--border);border-radius:6px;padding:2px 4px">
+            <option value="">全部尺度</option><option value="year">年 · 挂目标</option><option value="month">月 · 本月</option><option value="week">周 · 本周</option><option value="day">日 · 今日</option>
+          </select>
           <select id="gfGoal" style="font-size:12px;border:1px solid var(--border);border-radius:6px;padding:2px 4px"><option value="">全部簇</option></select>
           <span class="ghostbtn" id="gfReset" style="padding:2px 10px">复位</span>
         </div>
@@ -1039,6 +1042,17 @@ function buildGraph(force){
   if(GRAPH&&!force){drawGraph();return;}
   const showDone=$('gfDone').checked;
   const focusGoal=$('gfGoal').value?+$('gfGoal').value:null;
+  /* 时间尺度筛选:命中任务保留整棵子树+通往簇心的祖先路径 */
+  const scale=$('gfScale').value;
+  const cm=ymOf(today()),ws=fmtDate(mondayOf(new Date())),we=addDays(ws,6),td=today();
+  const todaySet=new Set(DATA.executions.filter(e=>e.date===td&&e.task_id).map(e=>e.task_id));
+  const matchScale=t=>{
+    if(scale==='year')return rootOf(t).goal_id!=null;
+    if(scale==='month')return t.month===cm;
+    if(scale==='week')return!!(t.start_date&&t.end_date&&t.start_date<=we&&t.end_date>=ws);
+    if(scale==='day')return todaySet.has(t.id);
+    return true;};
+  const treeHit=t=>matchScale(t)||kidsOf(t.id).some(treeHit);
   /* 目标下拉选项(保持选中) */
   const sel=$('gfGoal');
   const cur=sel.value;
@@ -1050,7 +1064,8 @@ function buildGraph(force){
     if(o){n.x=o.x;n.y=o.y;n.pin=o.pin;}else{n.x=(n.x0??0)+(Math.random()-0.5)*30;n.y=(n.y0??0)+(Math.random()-0.5)*30;}
     nodes.push(n);return n;};
   const skip=t=>(!showDone&&t.status==='done');
-  const goals=focusGoal?DATA.goals.filter(g=>g.id===focusGoal):DATA.goals;
+  let goals=focusGoal?DATA.goals.filter(g=>g.id===focusGoal):DATA.goals;
+  if(scale)goals=goals.filter(g=>DATA.tasks.some(t=>!t.parent_id&&t.goal_id===g.id&&treeHit(t)));
   if(!focusGoal)add({id:'@c',label:'⭐ 天罡',type:'center',hex:'#e8b23a',r:15,pin:true,x0:0,y0:0,x:0,y:0});
   const N=goals.length+1;
   goals.forEach((g,i)=>{
@@ -1059,26 +1074,28 @@ function buildGraph(force){
     if(!focusGoal)edges.push(['@c','g'+g.id,280]);
   });
   const topFree=[];
-  const addTask=(t,parentNid,depth)=>{
+  const addTask=(t,parentNid,depth,anc)=>{
     if(skip(t))return;
+    if(scale&&!anc&&!treeHit(t))return;   // 自身/子孙没命中且祖先也没命中 → 裁掉
     const p=old['t'+t.id]?null:nodes.find(n=>n.id===parentNid);
     add({id:'t'+t.id,label:t.name,type:'task',hex:taskHex(t),r:4.5+Math.min(6,Math.sqrt(t.leaves)*1.6),
       active:taskActive(t),nav:{page:'month',task:t},t,
       x0:p?p.x+Math.cos(t.id)*46:0,y0:p?p.y+Math.sin(t.id)*46:0});
     edges.push([parentNid,'t'+t.id,depth===0?135:75]);
-    kidsOf(t.id).forEach(k=>addTask(k,'t'+t.id,depth+1));
+    kidsOf(t.id).forEach(k=>addTask(k,'t'+t.id,depth+1,anc||matchScale(t)));
   };
   for(const t of DATA.tasks){
     if(t.parent_id!=null)continue;
-    if(focusGoal){if(t.goal_id===focusGoal)addTask(t,'g'+focusGoal,0);continue;}
-    if(t.goal_id!=null&&DATA.goals.some(g=>g.id===t.goal_id))addTask(t,'g'+t.goal_id,0);
+    if(focusGoal){if(t.goal_id===focusGoal)addTask(t,'g'+focusGoal,0,false);continue;}
+    if(t.goal_id!=null&&DATA.goals.some(g=>g.id===t.goal_id)){if(goals.some(g=>g.id===t.goal_id))addTask(t,'g'+t.goal_id,0,false);}
     else topFree.push(t);
   }
-  if(!focusGoal&&topFree.length){
+  const freeKept=scale?topFree.filter(treeHit):topFree;
+  if(!focusGoal&&freeKept.length){
     const a=(goals.length)/N*Math.PI*2;
     add({id:'@free',label:'独立任务',type:'hub',hex:'#8a8378',r:10,x0:Math.cos(a)*300,y0:Math.sin(a)*300});
     edges.push(['@c','@free',280]);
-    topFree.forEach(t=>addTask(t,'@free',0));
+    freeKept.forEach(t=>addTask(t,'@free',0,false));
   }
   const warm=Object.keys(old).length>0;
   graphSimulate(nodes,edges,warm?15:70);   // 只算个粗形,余下交给实时模拟平滑收敛
@@ -1186,8 +1203,9 @@ function graphJump(n){
     const ns=Math.max(0.25,Math.min(4,G.scale*f));
     G.tx=mx-(mx-G.tx)*(ns/G.scale);G.ty=my-(my-G.ty)*(ns/G.scale);G.scale=ns;drawGraph();},{passive:false});
   $('gfDone').addEventListener('change',()=>{if(DATA)buildGraph(true);});
+  $('gfScale').addEventListener('change',()=>{if(DATA){GRAPH=null;buildGraph(true);}});
   $('gfGoal').addEventListener('change',()=>{if(DATA){GRAPH=null;buildGraph(true);}});
-  $('gfReset').addEventListener('click',()=>{if(!GRAPH)return;GRAPH.nodes.forEach(n=>{if(n.type!=='center')n.pin=false;});GRAPH=null;$('gfGoal').value='';buildGraph(true);});
+  $('gfReset').addEventListener('click',()=>{if(!GRAPH)return;GRAPH.nodes.forEach(n=>{if(n.type!=='center')n.pin=false;});GRAPH=null;$('gfGoal').value='';$('gfScale').value='';buildGraph(true);});
 })();
 
 /* ================= 登录与启动 ================= */
