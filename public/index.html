@@ -129,6 +129,8 @@
   .tcb{width:15px;height:15px;flex:none;cursor:pointer;accent-color:var(--green)}
   .subinp{margin:0 0 10px 26px;display:flex;gap:8px}
   .subinp input{flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:12.5px}
+  .subinp button{padding:6px 16px;border:none;border-radius:8px;background:var(--text);color:#fff;font-size:12.5px;cursor:pointer;flex:none}
+  .subinp button:hover{opacity:.85}
   /* 甘特 */
   .mgantt{padding:2px 4px;overflow:visible}
   .mg-row{display:grid;grid-template-columns:200px 1fr;align-items:center;min-height:30px}
@@ -641,13 +643,15 @@ function monthRelevant(t){
 function renderOutline(){
   const roots=DATA.tasks.filter(t=>!t.parent_id&&t.status!=='done'&&monthRelevant(t));
   const rows=[];
-  const walk=(t,d)=>{rows.push({t,d});if(expanded.has(t.id))kidsOf(t.id).forEach(k=>walk(k,d+1));};
+  const walk=(t,d)=>{rows.push({t,d});
+    if(expanded.has(t.id)){kidsOf(t.id).forEach(k=>walk(k,d+1));rows.push({addFor:t,d:d+1});}};
   roots.forEach(t=>walk(t,0));
   $('olCnt').textContent=roots.length+' 棵树';
-  $('outline').innerHTML=rows.map(({t,d})=>{
-    const kids=kidsOf(t.id).length;
-    return `<div class="olrow${t.status==='done'?' done':''}" style="padding-left:${d*22}px" data-olid="${t.id}">
-      <span class="mg-caret${expanded.has(t.id)?' open':''}" data-car="${t.id}" style="cursor:pointer;visibility:${kids?'visible':'hidden'}">▸</span>
+  $('outline').innerHTML=rows.map(row=>{
+    if(row.addFor)return`<div class="subinp" data-osubinp="${row.addFor.id}" style="margin:2px 0 10px ${(row.d-1)*22+26}px"><input placeholder="添加一个子任务,回车确认…"><button>添加</button></div>`;
+    const{t,d}=row;
+    return `<div class="olrow${t.status==='done'?' done':''}" style="padding-left:${d*22}px;cursor:pointer" data-olid="${t.id}" title="点击展开/收起">
+      <span class="mg-caret${expanded.has(t.id)?' open':''}">▸</span>
       ${cbHtml(t,'tcb')}${nmBadge(t)}
       <span class="name olname">${esc(t.name)}</span>
       ${t.month?`<span class="datechip">📌${t.month}</span>`:''}
@@ -655,24 +659,19 @@ function renderOutline(){
       ${d===0?`<span class="type ${kindOf(t)==='工作'?'work':'growth'}">${esc(kindOf(t))}</span>`:''}
       <span class="ops">
         <span class="ab ed" data-oed="${t.id}" title="改名">✎</span>
-        <span class="chipbtn" data-osub="${t.id}" title="添加子任务">＋ 子任务</span>
         <span class="ab ed" data-orp="${t.id}" title="挂到… / 设为顶层">⇄</span>
         ${t.parent_id?`<span class="ab in" data-oout="${t.id}" title="独立出去">⇱</span>`:''}
         <span class="ab rm" data-oarc="${t.id}" title="归档整棵子树">×</span>
-      </span></div>
-      <div class="subinp" data-osubinp="${t.id}" style="display:none;margin-left:${d*22+26}px"><input placeholder="子任务名,回车创建"><button>＋</button></div>`;
+      </span></div>`;
   }).join('')||'<div style="color:var(--text3);font-size:13px">本月还没有任务</div>';
   const root=$('outline');
   bindCbs(root,'tcb');
-  root.querySelectorAll('[data-car]').forEach(c=>c.addEventListener('click',()=>{
-    const id=+c.dataset.car;expanded.has(id)?expanded.delete(id):expanded.add(id);renderOutline();}));
+  root.querySelectorAll('.olrow[data-olid]').forEach(r=>r.addEventListener('click',e=>{
+    if(e.target.closest('.ab,.chipbtn,input,button'))return;
+    const id=+r.dataset.olid;expanded.has(id)?expanded.delete(id):expanded.add(id);renderOutline();}));
   root.querySelectorAll('[data-oed]').forEach(b=>b.addEventListener('click',()=>{
     const t=MAP.get(+b.dataset.oed);const span=b.closest('.olrow').querySelector('.olname');
     inlineEdit(span,t.name,v=>patchTask(t.id,{name:v},'已改名 ✓'));}));
-  root.querySelectorAll('[data-osub]').forEach(b=>b.addEventListener('click',()=>{
-    const box=root.querySelector(`[data-osubinp="${b.dataset.osub}"]`);
-    box.style.display=box.style.display==='none'?'flex':'none';box.querySelector('input').focus();
-    expanded.add(+b.dataset.osub);}));
   root.querySelectorAll('[data-osubinp]').forEach(box=>{
     const submit=()=>{const v=box.querySelector('input').value.trim();if(!v)return;
       createTask({name:v,parent_id:+box.dataset.osubinp},'子任务已创建 ✓');};
@@ -732,11 +731,11 @@ function renderGantt(containerId,mode){
   let html=`<div class="mg-row mg-headrow"><div class="mg-label"></div><div class="mg-track mg-axis" style="${mode==='week'?'height:34px':''}">${ticks.join('')}${todayLine}</div></div>`;
   if(!rows.length)html+=`<div class="mg-row"><div class="mg-label"></div><div class="mg-track"><span class="mg-empty">${isMonth?'本月暂无排期:把规划池的任务「⏱排期」或拖到下方放置区':'本周暂无排期'}</span></div></div>`;
   html+=rows.map(row=>{
-    if(row.addFor)return`<div class="mg-row mg-addrow"><div class="mg-label" style="padding-left:${row.d*16}px"><input class="mg-addinp" data-tadd="${row.addFor.id}" placeholder="＋ 子任务,回车添加"></div><div class="mg-track"></div></div>`;
+    if(row.addFor)return`<div class="mg-row mg-addrow"><div class="mg-label" style="padding-left:${row.d*16}px"><input class="mg-addinp" data-tadd="${row.addFor.id}" placeholder="添加一个子任务,回车确认…"></div><div class="mg-track"></div></div>`;
     const{t,d,pRange}=row;
     const kids=kidsOf(t.id).length,open=expanded.has(t.id);
     const col=kindColor(t);
-    const caret=`<span class="mg-caret${open?' open':''}" style="visibility:${kids?'visible':'hidden'}">▸</span>`;
+    const caret=`<span class="mg-caret${open?' open':''}">▸</span>`;
     let bar='';
     if(t.start_date&&t.end_date){
       const rawS=idxRaw(b,t.start_date),rawE=idxRaw(b,t.end_date);
@@ -797,7 +796,7 @@ function bindGantt(el,b,isMonth){
       bar._ns=ns;bar._ne=ne;preview(ns,ne);};
     const up=async()=>{document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);
       if(mode===null)return;const wasMode=mode;mode=null;
-      if(!moved){if(hasKids)toggleExpand(t.id);return;}
+      if(!moved){toggleExpand(t.id);return;}
       const ns=bar._ns,ne=bar._ne;
       if(ns===t.start_date&&ne===t.end_date)return;
       const jobs=[[t.id,ns,ne]];
@@ -838,8 +837,7 @@ function bindGantt(el,b,isMonth){
   });
   /* 信封条/标签点击=展开;× 取消排期;子任务添加输入 */
   el.querySelectorAll('.mg-bar.env').forEach(bar=>bar.addEventListener('click',()=>toggleExpand(+bar.dataset.envfor)));
-  el.querySelectorAll('.mg-label[data-lab]').forEach(lab=>lab.addEventListener('click',()=>{
-    const id=+lab.dataset.lab;if(kidsOf(id).length)toggleExpand(id);}));
+  el.querySelectorAll('.mg-label[data-lab]').forEach(lab=>lab.addEventListener('click',()=>toggleExpand(+lab.dataset.lab)));
   el.querySelectorAll('[data-lux]').forEach(x=>{
     x.addEventListener('pointerdown',e=>e.stopPropagation());
     x.addEventListener('click',e=>{e.stopPropagation();
@@ -911,30 +909,29 @@ function renderWeek(){
   const rowHtml=(t,d)=>{
     const cr=d===0?crumbs(t):'';
     const kids=kidsOf(t.id),open=expanded.has(t.id);
-    let h=`<div class="dayrow${t.status==='done'?' done':''}" style="padding-left:${d*20}px">
-      <span class="mg-caret${open?' open':''}" data-wcar="${t.id}" style="cursor:pointer;visibility:${kids.length?'visible':'hidden'}">▸</span>
+    let h=`<div class="dayrow${t.status==='done'?' done':''}" data-wrow="${t.id}" style="padding-left:${d*20}px;cursor:pointer" title="点击展开/收起">
+      <span class="mg-caret${open?' open':''}">▸</span>
       ${cbHtml(t,'tcb')}${nmBadge(t)}
-      <span class="name wdrag" data-wdrag="${t.id}" draggable="true" title="${esc(t.name)} · 拖到上方周甘特排期/改期">${esc(t.name)}</span>
+      <span class="name wdrag" data-wdrag="${t.id}" draggable="true" title="${esc(t.name)} · 点击展开 · 拖到上方周甘特排期/改期">${esc(t.name)}</span>
       ${cr?`<span class="crumb" title="${esc(cr)}">${esc(cr)}</span>`:''}
       ${t.start_date?`<span class="datechip">${fmtMD(t.start_date)}→${fmtMD(t.end_date)}</span>`:''}
       ${d===0?`<span class="srcbadge ${kindOf(t)==='工作'?'work':'growth'}">${esc(kindOf(t))}</span>`:''}
-      <span class="ops"><span class="chipbtn" data-wsub="${t.id}" title="添加子任务">＋ 子任务</span></span>
-    </div>
-    <div class="subinp" data-wsubinp="${t.id}" style="display:none;margin-left:${d*20+30}px"><input placeholder="子任务名,回车创建"><button>＋</button></div>`;
-    if(open)h+=kids.map(k=>rowHtml(k,d+1)).join('');
+    </div>`;
+    if(open){
+      h+=kids.map(k=>rowHtml(k,d+1)).join('');
+      h+=`<div class="subinp" data-wsubinp="${t.id}" style="margin:2px 0 10px ${d*20+30}px"><input placeholder="添加一个子任务,回车确认…"><button>添加</button></div>`;
+    }
     return h;};
   const undone=roots.filter(t=>t.status!=='done'),done=roots.filter(t=>t.status==='done');
   $('wkList').innerHTML=(undone.map(t=>rowHtml(t,0)).join('')||'<div style="color:var(--text3);font-size:13px">本周暂无任务</div>')+
     (done.length?`<div class="donesec"><div class="dh">已完成 ${done.length}</div>${done.map(t=>rowHtml(t,0)).join('')}</div>`:'');
   bindCbs($('wkList'),'tcb');
-  $('wkList').querySelectorAll('[data-wcar]').forEach(c=>c.addEventListener('click',()=>{
-    const id=+c.dataset.wcar;expanded.has(id)?expanded.delete(id):expanded.add(id);renderWeek();}));
+  $('wkList').querySelectorAll('[data-wrow]').forEach(row=>row.addEventListener('click',e=>{
+    if(e.target.closest('.chipbtn,input,button'))return;
+    const id=+row.dataset.wrow;expanded.has(id)?expanded.delete(id):expanded.add(id);renderWeek();}));
   $('wkList').querySelectorAll('[data-wdrag]').forEach(el=>{
     el.addEventListener('dragstart',()=>{dragged={kind:'plan',id:+el.dataset.wdrag};el.style.opacity=.4;});
     el.addEventListener('dragend',()=>{el.style.opacity='';dragged=null;});});
-  $('wkList').querySelectorAll('[data-wsub]').forEach(b=>b.addEventListener('click',()=>{
-    const box=$('wkList').querySelector(`[data-wsubinp="${b.dataset.wsub}"]`);
-    box.style.display=box.style.display==='none'?'flex':'none';box.querySelector('input').focus();}));
   $('wkList').querySelectorAll('[data-wsubinp]').forEach(box=>{
     const submit=()=>{const v=box.querySelector('input').value.trim();if(!v)return;
       expanded.add(+box.dataset.wsubinp);
@@ -979,25 +976,22 @@ function renderDay(){
   const refRow=(t,d)=>{
     const inToday=DATA.executions.some(e=>e.date===viewDay&&e.task_id===t.id);
     const kids=kidsOf(t.id),open=expanded.has(t.id);
-    let h=`<div class="dayrow${t.status==='done'?' done':''}" style="padding-left:${d*20}px">
-      <span class="mg-caret${open?' open':''}" data-dcar="${t.id}" style="cursor:pointer;visibility:${kids.length?'visible':'hidden'}">▸</span>
+    let h=`<div class="dayrow${t.status==='done'?' done':''}" data-drow="${t.id}" style="padding-left:${d*20}px;cursor:pointer" title="点击展开/收起">
+      <span class="mg-caret${open?' open':''}">▸</span>
       ${isLeaf(t)?'':nmBadge(t)}
       <span class="name">${esc(t.name)}</span>
       ${t.start_date?`<span class="datechip">${fmtMD(t.start_date)}→${fmtMD(t.end_date)}</span>`:''}
-      <span class="ops" style="opacity:1">
-        ${isLeaf(t)&&t.status!=='done'?(inToday?'<span class="chipbtn muted">已在今日</span>':`<span class="chipbtn" data-addex="${t.id}" title="拉入当日待办">＋ 今日</span>`):''}
-        <span class="chipbtn" data-dsub="${t.id}" title="添加子任务">＋ 子任务</span>
-      </span>
-    </div>
-    <div class="subinp" data-dsubinp="${t.id}" style="display:none;margin-left:${d*20+30}px"><input placeholder="子任务名,回车创建"><button>＋</button></div>`;
-    if(open)h+=kids.map(k=>refRow(k,d+1)).join('');
+      ${isLeaf(t)&&t.status!=='done'?`<span class="ops" style="opacity:1">${inToday?'<span class="chipbtn muted">已在今日</span>':`<span class="chipbtn" data-addex="${t.id}" title="拉入当日待办">＋ 今日</span>`}</span>`:''}
+    </div>`;
+    if(open){
+      h+=kids.map(k=>refRow(k,d+1)).join('');
+      h+=`<div class="subinp" data-dsubinp="${t.id}" style="margin:2px 0 10px ${d*20+30}px"><input placeholder="添加一个子任务,回车确认…"><button>添加</button></div>`;
+    }
     return h;};
   $('dayWeekRef').innerHTML=roots.map(t=>refRow(t,0)).join('')||'<div style="color:var(--text3);font-size:13px">本周暂无任务</div>';
-  $('dayWeekRef').querySelectorAll('[data-dcar]').forEach(c=>c.addEventListener('click',()=>{
-    const id=+c.dataset.dcar;expanded.has(id)?expanded.delete(id):expanded.add(id);renderDay();}));
-  $('dayWeekRef').querySelectorAll('[data-dsub]').forEach(b=>b.addEventListener('click',()=>{
-    const box=$('dayWeekRef').querySelector(`[data-dsubinp="${b.dataset.dsub}"]`);
-    box.style.display=box.style.display==='none'?'flex':'none';box.querySelector('input').focus();}));
+  $('dayWeekRef').querySelectorAll('[data-drow]').forEach(row=>row.addEventListener('click',e=>{
+    if(e.target.closest('.chipbtn,input,button'))return;
+    const id=+row.dataset.drow;expanded.has(id)?expanded.delete(id):expanded.add(id);renderDay();}));
   $('dayWeekRef').querySelectorAll('[data-dsubinp]').forEach(box=>{
     const submit=()=>{const v=box.querySelector('input').value.trim();if(!v)return;
       expanded.add(+box.dataset.dsubinp);
