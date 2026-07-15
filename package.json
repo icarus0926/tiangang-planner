@@ -5,12 +5,16 @@
   "main": "server.js",
   "license": "MIT",
   "author": "icarus0926",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/icarus0926/tiangang-planner.git"
+  },
   "scripts": {
     "start": "node server.js",
     "test": "node test.mjs"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22.5.0"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
