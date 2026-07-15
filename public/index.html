@@ -104,6 +104,13 @@
   .ab.ed:hover{background:#f4ecd9;color:#9a6b1f}
   .ab.rm:hover{background:#fbe9e7;color:#c04531}
   .ab.rs:hover{background:#e2f3e8;color:#2e7d4f}
+  /* 文字类操作:规整小胶囊 */
+  .chipbtn{display:inline-flex;align-items:center;padding:1px 9px;border:1px solid #dcd8d2;border-radius:11px;background:#fff;
+    font-size:11px;line-height:17px;color:var(--text2);cursor:pointer;flex:none;transition:all .12s;user-select:none;white-space:nowrap}
+  .chipbtn:hover{border-color:#9db9dd;color:#2f6bb3;background:#f3f8ff}
+  .chipbtn.muted{opacity:.55;cursor:default;border-style:dashed}
+  .chipbtn.muted:hover{border-color:#dcd8d2;color:var(--text2);background:#fff}
+  .wdrag{cursor:grab}.wdrag:active{cursor:grabbing}
   /* 规划池行 */
   .mlist{padding:6px 18px}
   .mrow{border-top:1px solid #f4f3f1;display:flex;align-items:center;gap:9px;padding:10px 0;min-height:44px}
@@ -531,7 +538,7 @@ function renderPool(){
       `<div class="pcard" data-tid="${t.id}"><span class="badge ${prClass(t.priority)}" data-pr="${t.id}" title="点击切换优先级">${t.priority||'–'}</span>
        <span class="pc-t" title="${esc(t.name)}">${esc(t.name)}</span>
        <span class="ab ed" data-ed="${t.id}" title="改名">✎</span>
-       <span class="ab in" data-in="${t.id}" title="排入本月规划池">→月</span>
+       <span class="chipbtn" data-in="${t.id}" title="排入本月规划池">→ 月</span>
        <span class="ab rm" data-rm="${t.id}" title="归档">×</span></div>`).join('')}</div></div>`;
   }).join('')||'<div style="color:var(--text3);font-size:12.5px">池是空的</div>';
   bindPoolCardOps($('poolLayers'));
@@ -564,7 +571,7 @@ function renderPlanPool(){
       <span class="ops">
         <span class="ab ed" data-ed="${t.id}" title="改名">✎</span>
         ${t.start_date?'':`<span class="ab in" data-sch="${t.id}" title="排期(默认3天,甘特可拖)">⏱</span>`}
-        <span class="ab in" data-sub="${t.id}" title="添加子任务">＋子</span>
+        <span class="chipbtn" data-sub="${t.id}" title="添加子任务">＋ 子任务</span>
         <span class="ab ed" data-rp="${t.id}" title="挂到其他任务下 / 设为顶层">⇄</span>
         ${t.parent_id?`<span class="ab in" data-out="${t.id}" title="独立出去(脱离父任务成顶层)">⇱</span>`
                      :`<span class="ab rm" data-back="${t.id}" title="退回任务池(清空月份与排期)">×</span>`}
@@ -648,7 +655,7 @@ function renderOutline(){
       ${d===0?`<span class="type ${kindOf(t)==='工作'?'work':'growth'}">${esc(kindOf(t))}</span>`:''}
       <span class="ops">
         <span class="ab ed" data-oed="${t.id}" title="改名">✎</span>
-        <span class="ab in" data-osub="${t.id}" title="添加子任务">＋子</span>
+        <span class="chipbtn" data-osub="${t.id}" title="添加子任务">＋ 子任务</span>
         <span class="ab ed" data-orp="${t.id}" title="挂到… / 设为顶层">⇄</span>
         ${t.parent_id?`<span class="ab in" data-oout="${t.id}" title="独立出去">⇱</span>`:''}
         <span class="ab rm" data-oarc="${t.id}" title="归档整棵子树">×</span>
@@ -762,7 +769,7 @@ function renderGantt(containerId,mode){
         ${caret}${cbHtml(t,'gcb')}<span class="lt">${esc(t.name)}</span>${nmBadge(t)}${luxT?`<span class="lux" data-lux="${t.id}" title="${luxT}">×</span>`:''}
       </div><div class="mg-track">${bar}</div></div>`;
   }).join('');
-  if(isMonth)html+=`<div class="mg-row" style="min-height:38px"><div class="mg-label"></div><div class="mg-track mg-drop">${todayLine}<span class="mg-drophint">⬆ 从"本月规划池"拖任务到此排期(默认3天,可拖动调整)</span></div></div>`;
+  html+=`<div class="mg-row" style="min-height:38px"><div class="mg-label"></div><div class="mg-track mg-drop">${todayLine}<span class="mg-drophint">${isMonth?'⬆ 从"本月规划池"拖任务到此排期(默认3天,可拖动调整)':'⬇ 从下方"本周任务"拖任务名到此排期/改期'}</span></div></div>`;
   el.innerHTML=html;
   bindGantt(el,b,isMonth);
 }
@@ -868,8 +875,7 @@ function bindGantt(el,b,isMonth){
       const r=row.getBoundingClientRect();const before=e.clientY<r.top+r.height/2;
       reorderSiblings(src,tgt,before,b);});
   });
-  /* 从规划池拖入排期(仅月甘特) */
-  if(!isMonth)return;
+  /* 拖入排期:月甘特收"规划池"行,周甘特收"本周任务"卡任务名 */
   el.querySelectorAll('.mg-track').forEach(track=>{
     if(track.classList.contains('mg-axis'))return;
     track.addEventListener('dragover',e=>{if(dragged&&dragged.kind==='plan'){e.preventDefault();track.classList.add('mg-over');}});
@@ -904,17 +910,26 @@ function renderWeek(){
   const roots=ganttRoots(b);
   const rowHtml=(t,d)=>{
     const cr=d===0?crumbs(t):'';
-    return`<div class="dayrow${t.status==='done'?' done':''}" style="padding-left:${d*20}px">
+    const kids=kidsOf(t.id),open=expanded.has(t.id);
+    let h=`<div class="dayrow${t.status==='done'?' done':''}" style="padding-left:${d*20}px">
+      <span class="mg-caret${open?' open':''}" data-wcar="${t.id}" style="cursor:pointer;visibility:${kids.length?'visible':'hidden'}">▸</span>
       ${cbHtml(t,'tcb')}${nmBadge(t)}
-      <span class="name">${esc(t.name)}</span>
+      <span class="name wdrag" data-wdrag="${t.id}" draggable="true" title="${esc(t.name)} · 拖到上方周甘特排期/改期">${esc(t.name)}</span>
       ${cr?`<span class="crumb" title="${esc(cr)}">${esc(cr)}</span>`:''}
       ${t.start_date?`<span class="datechip">${fmtMD(t.start_date)}→${fmtMD(t.end_date)}</span>`:''}
       ${d===0?`<span class="srcbadge ${kindOf(t)==='工作'?'work':'growth'}">${esc(kindOf(t))}</span>`:''}
-    </div>`+kidsOf(t.id).map(k=>rowHtml(k,d+1)).join('');};
+    </div>`;
+    if(open)h+=kids.map(k=>rowHtml(k,d+1)).join('');
+    return h;};
   const undone=roots.filter(t=>t.status!=='done'),done=roots.filter(t=>t.status==='done');
   $('wkList').innerHTML=(undone.map(t=>rowHtml(t,0)).join('')||'<div style="color:var(--text3);font-size:13px">本周暂无任务</div>')+
     (done.length?`<div class="donesec"><div class="dh">已完成 ${done.length}</div>${done.map(t=>rowHtml(t,0)).join('')}</div>`:'');
   bindCbs($('wkList'),'tcb');
+  $('wkList').querySelectorAll('[data-wcar]').forEach(c=>c.addEventListener('click',()=>{
+    const id=+c.dataset.wcar;expanded.has(id)?expanded.delete(id):expanded.add(id);renderWeek();}));
+  $('wkList').querySelectorAll('[data-wdrag]').forEach(el=>{
+    el.addEventListener('dragstart',()=>{dragged={kind:'plan',id:+el.dataset.wdrag};el.style.opacity=.4;});
+    el.addEventListener('dragend',()=>{el.style.opacity='';dragged=null;});});
 }
 
 /* ================= 日页 ================= */
@@ -952,13 +967,19 @@ function renderDay(){
   const roots=ganttRoots(wb);
   const refRow=(t,d)=>{
     const inToday=DATA.executions.some(e=>e.date===viewDay&&e.task_id===t.id);
-    return`<div class="dayrow${t.status==='done'?' done':''}" style="padding-left:${d*20}px">
+    const kids=kidsOf(t.id),open=expanded.has(t.id);
+    let h=`<div class="dayrow${t.status==='done'?' done':''}" style="padding-left:${d*20}px">
+      <span class="mg-caret${open?' open':''}" data-dcar="${t.id}" style="cursor:pointer;visibility:${kids.length?'visible':'hidden'}">▸</span>
       ${isLeaf(t)?'':nmBadge(t)}
       <span class="name">${esc(t.name)}</span>
       ${t.start_date?`<span class="datechip">${fmtMD(t.start_date)}→${fmtMD(t.end_date)}</span>`:''}
-      ${isLeaf(t)&&t.status!=='done'?`<span class="ops" style="opacity:1"><span class="ab in" data-addex="${t.id}" title="拉入当日待办">${inToday?'已在今日':'＋今日'}</span></span>`:''}
-    </div>`+kidsOf(t.id).map(k=>refRow(k,d+1)).join('');};
+      ${isLeaf(t)&&t.status!=='done'?`<span class="ops" style="opacity:1">${inToday?'<span class="chipbtn muted">已在今日</span>':`<span class="chipbtn" data-addex="${t.id}" title="拉入当日待办">＋ 今日</span>`}</span>`:''}
+    </div>`;
+    if(open)h+=kids.map(k=>refRow(k,d+1)).join('');
+    return h;};
   $('dayWeekRef').innerHTML=roots.map(t=>refRow(t,0)).join('')||'<div style="color:var(--text3);font-size:13px">本周暂无任务</div>';
+  $('dayWeekRef').querySelectorAll('[data-dcar]').forEach(c=>c.addEventListener('click',()=>{
+    const id=+c.dataset.dcar;expanded.has(id)?expanded.delete(id):expanded.add(id);renderDay();}));
   $('dayWeekRef').querySelectorAll('[data-addex]').forEach(bn=>bn.addEventListener('click',()=>{
     mutate(()=>api('POST','/api/execution',{task_id:+bn.dataset.addex,date:viewDay}),'已拉入当日待办 ✓');}));
 }
