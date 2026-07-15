@@ -261,7 +261,7 @@
       <div class="kpis" id="ovKpis"></div>
       <h2><span class="bar" style="background:var(--purple)"></span>任务全景图<span class="cnt" id="graphCnt"></span></h2>
       <div class="card graphwrap" style="padding:0">
-        <canvas id="graphCanvas" style="width:100%;height:560px;display:block"></canvas>
+        <canvas id="graphCanvas" style="width:100%;height:700px;display:block"></canvas>
         <div id="graphTip"></div><div id="graphLegend"></div>
         <div class="gfilters">
           <label><input type="checkbox" id="gfDone" checked>含已完成</label>
@@ -1004,7 +1004,7 @@ function graphStep(nodes,edges,idx,cool){
     const a=nodes[i],b=nodes[j];
     let dx=a.x-b.x,dy=a.y-b.y;const d2=dx*dx+dy*dy+0.01;
     if(d2>160000)continue;
-    const d=Math.sqrt(d2),f=4200/d2;
+    const d=Math.sqrt(d2),f=5400/d2;
     dx/=d;dy/=d;a.fx+=dx*f;a.fy+=dy*f;b.fx-=dx*f;b.fy-=dy*f;
   }
   for(const e of edges){
@@ -1030,9 +1030,9 @@ function gKick(a){gAlpha=Math.max(gAlpha,a);if(!gAnim)gLoop();}
 function gLoop(){
   gAnim=setTimeout(()=>{
     const G=GRAPH;
-    if(!G||curPage!=='overview'||gAlpha<0.015){gAnim=null;gAlpha=0;return;}
+    if(!G||curPage!=='overview'||gAlpha<0.03){gAnim=null;gAlpha=0;return;}
     graphStep(G.nodes,G.edges,G.idx,gAlpha);
-    gAlpha*=0.975;
+    gAlpha*=0.97;
     drawGraph();
     gLoop();
   },33);
@@ -1071,7 +1071,7 @@ function buildGraph(force){
   goals.forEach((g,i)=>{
     const a=i/N*Math.PI*2,R=focusGoal?0:300;
     add({id:'g'+g.id,label:g.name,type:'goal',hex:domHex(g.domain),r:8+Math.min(6,DATA.tasks.filter(t=>t.goal_id===g.id).length),nav:{page:'year'},x0:Math.cos(a)*R,y0:Math.sin(a)*R,g});
-    if(!focusGoal)edges.push(['@c','g'+g.id,280]);
+    if(!focusGoal)edges.push(['@c','g'+g.id,330]);
   });
   const topFree=[];
   const addTask=(t,parentNid,depth,anc)=>{
@@ -1081,7 +1081,7 @@ function buildGraph(force){
     add({id:'t'+t.id,label:t.name,type:'task',hex:taskHex(t),r:4.5+Math.min(6,Math.sqrt(t.leaves)*1.6),
       active:taskActive(t),nav:{page:'month',task:t},t,
       x0:p?p.x+Math.cos(t.id)*46:0,y0:p?p.y+Math.sin(t.id)*46:0});
-    edges.push([parentNid,'t'+t.id,depth===0?135:75]);
+    edges.push([parentNid,'t'+t.id,depth===0?165:100]);
     kidsOf(t.id).forEach(k=>addTask(k,'t'+t.id,depth+1,anc||matchScale(t)));
   };
   for(const t of DATA.tasks){
@@ -1094,7 +1094,7 @@ function buildGraph(force){
   if(!focusGoal&&freeKept.length){
     const a=(goals.length)/N*Math.PI*2;
     add({id:'@free',label:'独立任务',type:'hub',hex:'#8a8378',r:10,x0:Math.cos(a)*300,y0:Math.sin(a)*300});
-    edges.push(['@c','@free',280]);
+    edges.push(['@c','@free',330]);
     freeKept.forEach(t=>addTask(t,'@free',0,false));
   }
   const warm=Object.keys(old).length>0;
@@ -1115,7 +1115,7 @@ function fitGraph(){
   const W=cv.clientWidth,H=cv.clientHeight;
   let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
   for(const n of G.nodes){x0=Math.min(x0,n.x);y0=Math.min(y0,n.y);x1=Math.max(x1,n.x);y1=Math.max(y1,n.y);}
-  const pad=70;
+  const pad=95;
   G.scale=Math.min(1.4,Math.min((W-pad*2)/Math.max(1,x1-x0),(H-pad*2)/Math.max(1,y1-y0)));
   G.tx=W/2-(x0+x1)/2*G.scale;G.ty=H/2-(y0+y1)/2*G.scale;
 }
@@ -1129,22 +1129,48 @@ function drawGraph(){
   ctx.strokeStyle='#e3ded7';ctx.lineWidth=1;
   for(const e of G.edges){const a=G.nodes[G.idx[e[0]]],b=G.nodes[G.idx[e[1]]];if(!a||!b)continue;
     ctx.beginPath();ctx.moveTo(sx(a),sy(a));ctx.lineTo(sx(b),sy(b));ctx.stroke();}
+  const rad=n=>n.r*Math.max(0.7,Math.min(1.4,G.scale));
   for(const n of G.nodes){
-    const x=sx(n),y=sy(n),r=n.r*Math.max(0.7,Math.min(1.4,G.scale));
+    const x=sx(n),y=sy(n),r=rad(n);
     ctx.globalAlpha=(n.t&&n.t.status==='done')?0.45:1;
     ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);
     ctx.fillStyle=n.hex;ctx.fill();
     if(n.active){ctx.strokeStyle='#26221d';ctx.lineWidth=2;}
     else{ctx.strokeStyle='#fff';ctx.lineWidth=1.5;}
     ctx.stroke();ctx.globalAlpha=1;
-    if(n.r>=7||G.scale>=0.95){
-      ctx.fillStyle=n.type==='center'?'#6b5410':n.type==='goal'?'#5a5248':'#77716b';
-      ctx.font=(n.type==='center'||n.type==='goal'?'600 11px':'10px')+' system-ui,sans-serif';
-      ctx.textAlign='center';
-      const lb=n.label.length>10?n.label.slice(0,10)+'…':n.label;
-      ctx.fillText(lb,x,y+r+11);
-    }
   }
+  /* 标签后置全量绘制:大节点优先占位,候选位(下/上/右/左/远下/远上)碰撞规避,白描边保证可读 */
+  const placed=[];
+  const inter=(a,b)=>!(a[2]<b[0]||b[2]<a[0]||a[3]<b[1]||b[3]<a[1]);
+  const order=G.nodes.slice().sort((a,b)=>b.r-a.r);
+  for(const n of order){
+    const x=sx(n),y=sy(n),r=rad(n);
+    const big=n.type!=='task';
+    const fs=big?11:9.5;
+    ctx.font=(big?'600 ':'')+fs+'px system-ui,sans-serif';
+    if(n._lb===undefined){
+      const maxLen=big?12:8;
+      n._lb=n.label.length>maxLen?n.label.slice(0,maxLen)+'…':n.label;
+      n._lw=ctx.measureText(n._lb).width;
+    }
+    const lb=n._lb,w=n._lw;
+    const cands=[[x,y+r+3+fs],[x,y-r-6],[x+r+5+w/2,y+fs/2-2],[x-r-5-w/2,y+fs/2-2],
+                 [x,y+r+3+fs*2.3],[x,y-r-6-fs*1.3]];
+    let best=null,bestOv=1e9;
+    for(const[cx,cy]of cands){
+      const rect=[cx-w/2-2,cy-fs-1,cx+w/2+2,cy+3];
+      let ov=0;for(const p of placed){if(inter(rect,p))ov++;}
+      if(ov===0){best=[cx,cy,rect];break;}
+      if(ov<bestOv){bestOv=ov;best=[cx,cy,rect];}
+    }
+    ctx.textAlign='center';
+    ctx.lineWidth=3;ctx.strokeStyle='rgba(255,255,255,.88)';
+    ctx.strokeText(lb,best[0],best[1]);
+    ctx.fillStyle=n.type==='center'?'#6b5410':n.type==='goal'?'#5a5248':(n.t&&n.t.status==='done')?'#a8a29b':'#77716b';
+    ctx.fillText(lb,best[0],best[1]);
+    placed.push(best[2]);
+  }
+  G._labels=placed;   // 供调试/探针:标签矩形
 }
 function graphJump(n){
   if(!n.nav)return;
