@@ -459,7 +459,7 @@ const winWeek=mon=>d=>d>=mon&&d<=addDays(mon,6);
 const winDay=vd=>d=>d===vd;
 const prClass=p=>p==='P0'?'P0':p==='P1'?'P1':p==='P2'?'P2':'Px';
 const PRCYCLE={null:'P0',P0:'P1',P1:'P2',P2:null};
-const nmBadge=t=>isLeaf(t)?'':`<span class="nm${t.done_leaves===t.leaves?' full':''}" title="子树完成度:${t.done_leaves}/${t.leaves}(勾父任务=整棵子树一起完成)">${t.done_leaves}/${t.leaves}</span>`;
+const nmBadge=t=>(isLeaf(t)||t.status==='done')?'':`<span class="nm${t.done_leaves===t.leaves?' full':''}" title="子树完成度:${t.done_leaves}/${t.leaves}(勾父任务=整棵子树一起完成)">${t.done_leaves}/${t.leaves}</span>`;
 const cbHtml=(t,cls)=>`<input type="checkbox" class="${cls}" data-cb="${t.id}" ${t.status==='done'?'checked':''} title="${isLeaf(t)?'':'勾选=整棵子树一起完成 / 取消=整棵重开'}">`;
 function bindCbs(root,cls){root.querySelectorAll('input[data-cb].'+cls).forEach(cb=>{
   const t0=MAP.get(+cb.dataset.cb);
@@ -812,14 +812,14 @@ function renderGantt(containerId,mode){
         bar=`<div class="mg-bar${clip?' clip':''}${t.status==='done'?' done':''}${open?' open':''}" data-tid="${t.id}"
           style="left:${si/b.days*100}%;width:${Math.max((ei-si+1)/b.days*100,100/b.days)}%;background:${col}"
           title="${esc(t.name)} · ${t.start_date}→${t.end_date}${clip?'(延伸出本窗口)':''} · 拖动改期${kids?';父条拖动=整棵子树平移':''}">
-          ${handles?'<span class="mg-h l"></span>':''}<span class="mg-txt">${t.priority||''}</span>${handles?'<span class="mg-h r"></span>':''}</div>`;
+          ${handles?'<span class="mg-h l"></span>':''}<span class="mg-txt">${t.status==='done'?'✓ 已完成':esc(tagOf(t))+(t.priority?' · '+t.priority:'')}</span>${handles?'<span class="mg-h r"></span>':''}</div>`;
       }
     }else{
       const r=effRange(t);
       if(r&&r.env){
         const si=indexOfDate(b,r.s),ei=indexOfDate(b,r.e);
         bar=`<div class="mg-bar env" data-envfor="${t.id}" style="left:${si/b.days*100}%;width:${Math.max((ei-si+1)/b.days*100,100/b.days)}%;border-color:${col}"
-          title="${esc(t.name)} · 由子任务日期包络(${r.s}→${r.e}),点击展开"><span class="mg-txt">${t.done_leaves}/${t.leaves}</span></div>`;
+          title="${esc(t.name)} · 由子任务日期包络(${r.s}→${r.e}),点击展开"><span class="mg-txt">${t.done_leaves===t.leaves?'✓':t.done_leaves+'/'+t.leaves}</span></div>`;
       }else if(pRange){
         const pS=indexOfDate(b,pRange.s),pE=indexOfDate(b,pRange.e);
         bar=`<div class="mg-bar ghost" data-ghost="${t.id}" data-ps="${pS}" data-pe="${pE}" style="left:${pS/b.days*100}%;width:${Math.max((pE-pS+1)/b.days*100,100/b.days)}%;border-color:${col}"
