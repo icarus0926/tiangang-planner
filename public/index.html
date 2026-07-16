@@ -168,6 +168,7 @@
   .mg-row.rowdrag{opacity:.35}
   .mg-row.rowover-b{box-shadow:inset 0 2.5px 0 var(--green)}
   .mg-row.rowover-a{box-shadow:inset 0 -2.5px 0 var(--green)}
+  .mg-row.rowdone .mg-label .lt{text-decoration:line-through;color:var(--text3)}
   .mg-row.openrow .mg-label{white-space:normal}
   .mg-row.openrow .mg-label .lt{white-space:normal;overflow:visible;text-overflow:clip;word-break:break-word;line-height:1.45;padding:3px 0}
   .mg-addrow .mg-addinp{width:100%;padding:4px 9px;border:1px dashed #d8d4cf;border-radius:7px;font-size:12px;background:transparent}
@@ -435,8 +436,16 @@ function effRange(t){
   let s=null,e=null;for(const d of ds){if(!s||d.start_date<s)s=d.start_date;if(!e||d.end_date>e)e=d.end_date;}
   return{s,e,env:true};
 }
-const kindOf=t=>rootOf(t).kind||'个人成长';
-const kindColor=t=>t.status==='done'?'var(--green)':(kindOf(t)==='工作'?'var(--orange)':'var(--blue)');
+const kindOf=t=>rootOf(t).kind||'其他';
+/* 标签体系:kind 字段即标签,根的标签决定整棵树;老值(个人成长等)归入"其他" */
+const TAGS=['工作','学习','投资','副业','生活','其他'];
+const TAGHEX={'工作':'#e8833a','学习':'#3b82d6','投资':'#b8860b','副业':'#8b62c9','生活':'#d4699e','其他':'#9ca3af'};
+const tagOf=t=>{const k=kindOf(t);return TAGS.includes(k)?k:'其他';};
+const nextTag=k=>TAGS[(TAGS.indexOf(k)+1)%TAGS.length];
+const tagBadge=(t,attr='')=>{const tg=tagOf(t),h=TAGHEX[tg];
+  return`<span class="type" ${attr} style="background:${h}1f;color:${h}${attr?';cursor:pointer':''}" title="${attr?'点击切换标签':'标签(随根任务)'}">${tg}</span>`;};
+const kindColor=t=>t.status==='done'?'var(--green)':TAGHEX[tagOf(t)];
+const srcBadge=t=>{const h=TAGHEX[tagOf(t)];return`<span class="srcbadge" style="background:${h}1f;color:${h}">${tagOf(t)}</span>`;};
 /* 完成记录:每个完成簇只取最高 done 节点(父非done),done_at 落在时间窗内 → 供年/月/周/日各维度"已完成"清单;统一按 done_at=完成历史 */
 function doneRoots(inWin){
   return DATA.tasks.filter(t=>t.status==='done'&&t.done_at
@@ -563,13 +572,15 @@ function renderMonth(){
 function renderPool(){
   const pool=DATA.tasks.filter(t=>!t.parent_id&&t.status==='pool');
   $('poolCnt').textContent=pool.length+' 个待分配';
-  const groups=[['P0','P0'],['P1','P1'],['P2','P2'],[null,'待定']];
-  $('poolLayers').innerHTML=groups.map(([p,lab])=>{
-    const list=pool.filter(t=>(t.priority||null)===p);
+  $('poolLayers').innerHTML=TAGS.map(tag=>{
+    const list=pool.filter(t=>tagOf(t)===tag)
+      .sort((a,c)=>(prRank(a)-prRank(c))||(a.id-c.id));   // 组内仍按优先级排,只是不再按优先级分层
     if(!list.length)return'';
-    return `<div class="pool-layer"><div class="pl-lab">${lab}</div><div class="pl-cards">${list.map(t=>
+    const h=TAGHEX[tag];
+    return `<div class="pool-layer"><div class="pl-lab" style="color:${h};width:34px">${tag}</div><div class="pl-cards">${list.map(t=>
       `<div class="pcard" data-tid="${t.id}"><span class="badge ${prClass(t.priority)}" data-pr="${t.id}" title="点击切换优先级">${t.priority||'–'}</span>
        <span class="pc-t" title="${esc(t.name)}">${esc(t.name)}</span>
+       <span class="badge" data-tag="${t.id}" style="background:${h}1f;color:${h}" title="点击切换标签">${tag}</span>
        <span class="ab ed" data-ed="${t.id}" title="改名">✎</span>
        <span class="chipbtn" data-in="${t.id}" title="排入本月规划池">→ 月</span>
        <span class="ab rm" data-rm="${t.id}" title="归档">×</span></div>`).join('')}</div></div>`;
@@ -577,6 +588,9 @@ function renderPool(){
   bindPoolCardOps($('poolLayers'));
 }
 function bindPoolCardOps(root){
+  root.querySelectorAll('[data-tag]').forEach(b=>b.addEventListener('click',()=>{
+    const t=MAP.get(+b.dataset.tag);const to=nextTag(tagOf(t));
+    patchTask(t.id,{kind:to},`标签已切换 → ${to}`);}));
   root.querySelectorAll('[data-pr]').forEach(b=>b.addEventListener('click',()=>{
     const t=MAP.get(+b.dataset.pr);patchTask(t.id,{priority:PRCYCLE[t.priority??'null']??PRCYCLE[t.priority]??null},'优先级已切换');}));
   root.querySelectorAll('[data-ed]').forEach(b=>b.addEventListener('click',()=>{
@@ -610,7 +624,7 @@ function renderPlanPool(){
       ${cbHtml(t,'tcb')}${nmBadge(t)}
       <span class="name pname">${esc(t.name)}</span>
       ${cr?`<span class="crumb" title="${esc(cr)}">${esc(cr)}</span>`:''}
-      <span class="type ${kindOf(t)==='工作'?'work':'growth'}">${esc(kindOf(t))}</span>
+      ${t.parent_id?tagBadge(t):tagBadge(t,`data-ptag="${t.id}"`)}
       <span class="badge ${prClass(t.priority)}" data-pr="${t.id}" title="点击切换优先级">${t.priority||'–'}</span>
       ${t.start_date?`<span class="datechip" title="在甘特图中拖拽调整">${fmtMD(t.start_date)}→${fmtMD(t.end_date)}</span>`:''}
       <span class="ops">
@@ -637,8 +651,11 @@ function renderPlanPool(){
     const base=ymOf(today())===viewMonth?today():viewMonth+'-01';
     patchTask(t.id,{start_date:base,end_date:addDays(base,2)},'已排期,去甘特图拖拽调整 ✓');}));
   root.querySelectorAll('.mrow[data-prow]').forEach(row=>row.addEventListener('click',e=>{
-    if(e.target.closest('.ab,.badge,input,button'))return;
+    if(e.target.closest('.ab,.badge,.type,input,button'))return;
     const id=+row.dataset.prow;expanded.has(id)?expanded.delete(id):expanded.add(id);renderPlanPool();}));
+  root.querySelectorAll('[data-ptag]').forEach(b=>b.addEventListener('click',()=>{
+    const t=MAP.get(+b.dataset.ptag);const to=nextTag(tagOf(t));
+    patchTask(t.id,{kind:to},`标签已切换 → ${to}`);}));
   root.querySelectorAll('[data-psubinp]').forEach(box=>{
     const submit=()=>{const v=box.querySelector('input').value.trim();if(!v)return;
       expanded.add(+box.dataset.psubinp);
@@ -702,7 +719,7 @@ function renderOutline(){
       <span class="name olname">${esc(t.name)}</span>
       ${t.month?`<span class="datechip">📌${t.month}</span>`:''}
       ${t.start_date?`<span class="datechip">${fmtMD(t.start_date)}→${fmtMD(t.end_date)}</span>`:''}
-      ${d===0?`<span class="type ${kindOf(t)==='工作'?'work':'growth'}">${esc(kindOf(t))}</span>`:''}
+      ${d===0?tagBadge(t):''}
       <span class="ops">
         <span class="ab ed" data-oed="${t.id}" title="改名">✎</span>
         <span class="ab ed" data-orp="${t.id}" title="挂到… / 设为顶层">⇄</span>
@@ -748,7 +765,8 @@ function ganttRoots(b){
   const vis=t=>{const r=effRange(t);return!!(r&&r.s<=e0&&r.e>=s0);};
   return DATA.tasks
     .filter(t=>vis(t)&&(!t.parent_id||!MAP.has(t.parent_id)||!vis(MAP.get(t.parent_id))))
-    .sort((a,c)=>((a.sort??1e12)-(c.sort??1e12))||(prRank(a)-prRank(c))||(a.id-c.id));
+    .sort((a,c)=>((a.status==='done')-(c.status==='done'))   // 已完成沉底
+      ||((a.sort??1e12)-(c.sort??1e12))||(prRank(a)-prRank(c))||(a.id-c.id));
 }
 function rerenderTrees(){
   if(monthMode==='gantt')renderGantt('gantt','month');else renderOutline();
@@ -809,7 +827,7 @@ function renderGantt(containerId,mode){
       }
     }
     const luxT=t.start_date?'取消排期(退回规划池)':'';
-    return`<div class="mg-row${open?' openrow':''}" data-rowtid="${t.id}" data-depth="${d}">
+    return`<div class="mg-row${open?' openrow':''}${t.status==='done'?' rowdone':''}" data-rowtid="${t.id}" data-depth="${d}">
       <div class="mg-label${kids?' haskids':''}" data-lab="${t.id}" draggable="true" style="padding-left:${d*16}px" title="${esc(t.name)}${kids?' · 点击展开子任务':''} · 上下拖动调整顺序">
         ${caret}${cbHtml(t,'gcb')}<span class="lt">${esc(t.name)}</span>${nmBadge(t)}${luxT?`<span class="lux" data-lux="${t.id}" title="${luxT}">×</span>`:''}
       </div><div class="mg-track">${bar}</div></div>`;
@@ -961,7 +979,7 @@ function renderWeek(){
       <span class="name wdrag" data-wdrag="${t.id}" draggable="true" title="${esc(t.name)} · 点击展开 · 拖到上方周甘特排期/改期">${esc(t.name)}</span>
       ${cr?`<span class="crumb" title="${esc(cr)}">${esc(cr)}</span>`:''}
       ${t.start_date?`<span class="datechip">${fmtMD(t.start_date)}→${fmtMD(t.end_date)}</span>`:''}
-      ${d===0?`<span class="srcbadge ${kindOf(t)==='工作'?'work':'growth'}">${esc(kindOf(t))}</span>`:''}
+      ${d===0?srcBadge(t):''}
     </div>`;
     if(open){
       h+=kids.map(k=>rowHtml(k,d+1)).join('');
@@ -997,12 +1015,11 @@ function renderDay(){
     const t=e.task_id?MAP.get(e.task_id):null;
     const nm=e.task_id?(t?t.name:e.task_name||'(任务)'):e.text;
     const cr=t?crumbs(t):'';
-    const src=e.task_id?(t?(kindOf(t)==='工作'?'work':'growth'):'growth'):'free';
     return`<div class="dayrow${e.done?' done':''}">
       <input type="checkbox" class="tcb" data-ex="${e.id}" ${e.done?'checked':''}>
       <span class="name">${esc(nm)}</span>
       ${cr?`<span class="crumb" title="${esc(cr)}">${esc(cr)}</span>`:''}
-      <span class="srcbadge ${src}">${src==='free'?'自由':esc(t?kindOf(t):'任务')}</span>
+      ${t?srcBadge(t):`<span class="srcbadge free">${e.task_id?'任务':'自由'}</span>`}
       <span class="ops">
         ${e.task_id?'':`<span class="ab in" data-pro="${e.id}" title="升格为任务(进任务池)">↗</span>`}
         <span class="ab rm" data-exdel="${e.id}" title="删除这条待办">×</span>
@@ -1015,7 +1032,7 @@ function renderDay(){
     return`<div class="dayrow done"><span class="name">${esc(t.name)}</span>
       ${cr?`<span class="crumb" title="${esc(cr)}">${esc(cr)}</span>`:''}
       ${t.leaves>1?`<span class="nm full">${t.done_leaves}/${t.leaves}</span>`:''}
-      <span class="srcbadge ${kindOf(t)==='工作'?'work':'growth'}">${esc(kindOf(t))}</span>
+      ${srcBadge(t)}
       <span class="ops" style="opacity:1"><span class="ab rs" data-tres="${t.id}" title="重新打开">↩</span></span></div>`;};
   $('dayList').innerHTML=(undone.map(exRow).join('')||'<div style="color:var(--text3);font-size:13px">今天还没有待办</div>')+
     (done.length?`<div class="donesec"><div class="dh">今日完成待办 ${done.length}</div>${done.map(exRow).join('')}</div>`:'')+
@@ -1089,7 +1106,7 @@ function closeModal(){$('modal').classList.remove('show');mdTask=null;}
 let GRAPH=null;
 const DOMHEX=['#3b82d6','#e8833a','#8b62c9','#3da56b','#d6534f','#d4699e','#a07850'];
 const domHex=s=>{let h=0;for(const c of String(s||''))h=(h*31+c.charCodeAt(0))>>>0;return DOMHEX[h%DOMHEX.length];};
-const taskHex=t=>t.status==='done'?'#3da56b':t.status==='pool'?'#c0b9ae':(kindOf(t)==='工作'?'#e8833a':'#3b82d6');
+const taskHex=t=>t.status==='done'?'#3da56b':t.status==='pool'?'#c0b9ae':(TAGHEX[tagOf(t)]||'#3b82d6');
 function taskActive(t){
   if(t.month===ymOf(today()))return true;
   const ws=fmtDate(mondayOf(new Date())),we=addDays(ws,6);
@@ -1204,8 +1221,9 @@ function buildGraph(force){
   gKick(warm?0.5:1);
   $('graphCnt').textContent=` ${nodes.filter(n=>n.type==='task').length} 任务 · ${goals.length} 目标`;
   $('graphLegend').innerHTML=
-    `<div><i style="background:#d4a017"></i>年度目标(领域色)</div><div><i style="background:#e8833a"></i>工作</div>
-     <div><i style="background:#3b82d6"></i>个人成长</div><div><i style="background:#c0b9ae"></i>池·待分配</div>
+    `<div><i style="background:#d4a017"></i>年度目标(领域色)</div>`+
+    TAGS.filter(tg=>tg!=='其他').map(tg=>`<div><i style="background:${TAGHEX[tg]}"></i>${tg}</div>`).join('')+
+    `<div><i style="background:#c0b9ae"></i>池·待分配</div>
      <div><i style="background:#3da56b"></i>已完成</div><div><i style="border:2px solid #26221d;background:#fff"></i>本月/本周进行中</div>`;
 }
 function fitGraph(){
