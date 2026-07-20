@@ -1397,6 +1397,47 @@ function graphSimulate(nodes,edges,ticks){
   const idx=Object.fromEntries(nodes.map((n,i)=>[n.id,i]));
   for(let t=0;t<ticks;t++)graphStep(nodes,edges,idx,1-t/ticks);
 }
+/* 聚焦下钻:左键单击=聚焦节点子树(栈),右键=返回上层,双击=跳页 */
+let focusStack=[];
+function gDescIds(nid){
+  const G=GRAPH,set=new Set([nid]),st=[nid];
+  while(st.length){const c=st.pop();for(const e of G.edges)if(e[0]===c&&!set.has(e[1])){set.add(e[1]);st.push(e[1]);}}
+  return set;
+}
+let gAnimView=null;
+function animateView(ts,txT,tyT){
+  const G=GRAPH;if(!G)return;
+  clearInterval(gAnimView);
+  const s0=G.scale,x0=G.tx,y0=G.ty;let k=0,N=12;
+  gAnimView=setInterval(()=>{
+    k++;const p=1-Math.pow(1-k/N,3);
+    G.scale=s0+(ts-s0)*p;G.tx=x0+(txT-x0)*p;G.ty=y0+(tyT-y0)*p;
+    drawGraph();
+    if(k>=N)clearInterval(gAnimView);
+  },22);
+}
+function applyFocus(){
+  const G=GRAPH,cv=$('graphCanvas');if(!G||!cv)return;
+  // 栈顶节点若已不在图中(数据变了),逐级回退
+  while(focusStack.length&&!(focusStack[focusStack.length-1]in G.idx))focusStack.pop();
+  const cur=focusStack[focusStack.length-1]||null;
+  if(!cur){G.dimSet=null;fitGraph();drawGraph();return;}
+  const set=gDescIds(cur);
+  G.dimSet=set;
+  const nodes=G.nodes.filter(n=>set.has(n.id));
+  let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  for(const n of nodes){x0=Math.min(x0,n.x);y0=Math.min(y0,n.y);x1=Math.max(x1,n.x);y1=Math.max(y1,n.y);}
+  const W=cv.clientWidth,H=cv.clientHeight;
+  const pad=Math.min(95,W/4,H/4);   // 窄视口防负
+  const s=Math.max(0.35,Math.min(2.4,Math.min((W-pad*2)/Math.max(80,x1-x0),(H-pad*2)/Math.max(80,y1-y0))));
+  animateView(s,W/2-(x0+x1)/2*s,H/2-(y0+y1)/2*s);
+}
+function focusNode(nid){focusStack.push(nid);applyFocus();}
+function popFocus(){
+  if(focusStack.length){focusStack.pop();applyFocus();}
+  else{const G=GRAPH;if(G){G.dimSet=null;fitGraph();drawGraph();}}
+}
+
 /* 实时模拟:gKick 注入能量,30fps 循环逐帧衰减,静止即停(不烧 CPU;不用 rAF——后台/嵌入渲染器会冻结它) */
 let gAlpha=0,gAnim=null;
 function gKick(a){gAlpha=Math.max(gAlpha,a);if(!gAnim)gLoop();}
@@ -1475,22 +1516,24 @@ function buildGraph(force){
   GRAPH={nodes,edges,idx:Object.fromEntries(nodes.map((n,i)=>[n.id,i])),
     scale:GRAPH?GRAPH.scale:1,tx:GRAPH?GRAPH.tx:0,ty:GRAPH?GRAPH.ty:0,fitted:GRAPH?GRAPH.fitted:false};
   if(!GRAPH.fitted){fitGraph();GRAPH.fitted=true;}
-  drawGraph();
+  if(focusStack.length)applyFocus();   // 数据刷新后恢复聚焦态
+  else drawGraph();
   gKick(warm?0.5:1);
   $('graphCnt').textContent=` ${nodes.filter(n=>n.type==='task').length} 任务 · ${goals.length} 目标`;
   $('graphLegend').innerHTML=
     `<div><i style="background:#d4a017"></i>年度目标(领域色)</div>`+
     TAGS.filter(tg=>tg!=='其他').map(tg=>`<div><i style="background:${tagHex(tg)}"></i>${tg}</div>`).join('')+
     `<div><i style="background:#c0b9ae"></i>池·待分配</div>
-     <div><i style="background:#3da56b"></i>已完成</div><div><i style="border:2px solid #26221d;background:#fff"></i>本月/本周进行中</div>`;
+     <div><i style="background:#3da56b"></i>已完成</div><div><i style="border:2px solid #26221d;background:#fff"></i>本月/本周进行中</div>
+     <div style="color:var(--text3)">🖱 单击聚焦下钻 · 右键返回上层 · 双击跳转页面</div>`;
 }
 function fitGraph(){
   const cv=$('graphCanvas'),G=GRAPH;if(!cv||!G||!G.nodes.length)return;
   const W=cv.clientWidth,H=cv.clientHeight;
   let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
   for(const n of G.nodes){x0=Math.min(x0,n.x);y0=Math.min(y0,n.y);x1=Math.max(x1,n.x);y1=Math.max(y1,n.y);}
-  const pad=95;
-  G.scale=Math.min(1.4,Math.min((W-pad*2)/Math.max(1,x1-x0),(H-pad*2)/Math.max(1,y1-y0)));
+  const pad=Math.min(95,W/4,H/4);
+  G.scale=Math.max(0.15,Math.min(1.4,Math.min((W-pad*2)/Math.max(1,x1-x0),(H-pad*2)/Math.max(1,y1-y0))));
   G.tx=W/2-(x0+x1)/2*G.scale;G.ty=H/2-(y0+y1)/2*G.scale;
 }
 function drawGraph(){
@@ -1500,16 +1543,21 @@ function drawGraph(){
   const ctx=cv.getContext('2d');
   ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);
   const sx=n=>n.x*G.scale+G.tx,sy=n=>n.y*G.scale+G.ty;
-  ctx.strokeStyle='#e3ded7';ctx.lineWidth=1;
+  const dim=G.dimSet;
+  ctx.lineWidth=1;
   for(const e of G.edges){const a=G.nodes[G.idx[e[0]]],b=G.nodes[G.idx[e[1]]];if(!a||!b)continue;
+    const inF=!dim||(dim.has(a.id)&&dim.has(b.id));
+    ctx.strokeStyle='#e3ded7';ctx.globalAlpha=inF?1:0.08;
     ctx.beginPath();ctx.moveTo(sx(a),sy(a));ctx.lineTo(sx(b),sy(b));ctx.stroke();}
+  ctx.globalAlpha=1;
   const rad=n=>n.r*Math.max(0.7,Math.min(1.4,G.scale));
   for(const n of G.nodes){
     const x=sx(n),y=sy(n),r=rad(n);
-    ctx.globalAlpha=(n.t&&n.t.status==='done')?0.45:1;
+    const dimmed=dim&&!dim.has(n.id);
+    ctx.globalAlpha=dimmed?0.1:((n.t&&n.t.status==='done')?0.45:1);
     ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);
     ctx.fillStyle=n.hex;ctx.fill();
-    if(n.active){ctx.strokeStyle='#26221d';ctx.lineWidth=2;}
+    if(n.active&&!dimmed){ctx.strokeStyle='#26221d';ctx.lineWidth=2;}
     else{ctx.strokeStyle='#fff';ctx.lineWidth=1.5;}
     ctx.stroke();ctx.globalAlpha=1;
   }
@@ -1518,6 +1566,7 @@ function drawGraph(){
   const inter=(a,b)=>!(a[2]<b[0]||b[2]<a[0]||a[3]<b[1]||b[3]<a[1]);
   const order=G.nodes.slice().sort((a,b)=>b.r-a.r);
   for(const n of order){
+    if(dim&&!dim.has(n.id))continue;   // 聚焦时只给子树内节点画标签
     const x=sx(n),y=sy(n),r=rad(n);
     const big=n.type!=='task';
     const fs=big?11:9.5;
@@ -1574,7 +1623,8 @@ function graphJump(n){
       if((mx-x)**2+(my-y)**2<=(r+3)**2)return n;}
     return null;};
   const pos=e=>{const b=cv.getBoundingClientRect();return[e.clientX-b.left,e.clientY-b.top];};
-  cv.addEventListener('pointerdown',e=>{const[mx,my]=pos(e);const n=hit(mx,my);
+  cv.addEventListener('pointerdown',e=>{if(e.button!==0)return;
+    const[mx,my]=pos(e);const n=hit(mx,my);
     downAt=[mx,my];if(n&&n.type!=='center'){drag=n;dragKids=gDesc(n.id);}else{panning=true;px=mx;py=my;}
     cv.classList.add('dragging');try{cv.setPointerCapture(e.pointerId);}catch(_){}});
   cv.addEventListener('pointermove',e=>{const[mx,my]=pos(e);const G=GRAPH;if(!G)return;
@@ -1592,20 +1642,36 @@ function graphJump(n){
         :(n.g?`<b>${esc(n.g.name)}</b><br>${esc(n.g.domain||'')} · ${n.g.progress||0}%`:esc(n.label));
       cv.style.cursor='pointer';}
     else{tip.style.display='none';cv.style.cursor='grab';}});
+  let clickTimer=null,lastClick={id:null,ts:0};
   cv.addEventListener('pointerup',e=>{const[mx,my]=pos(e);
     const clicked=downAt&&Math.abs(mx-downAt[0])<4&&Math.abs(my-downAt[1])<4;
-    if(clicked){const n=hit(mx,my);if(n)graphJump(n);}
+    if(clicked){const n=hit(mx,my);
+      if(n){
+        const now=Date.now();
+        if(lastClick.id===n.id&&now-lastClick.ts<320){   // 双击=跳转对应页面
+          clearTimeout(clickTimer);lastClick={id:null,ts:0};
+          graphJump(n);
+        }else{
+          lastClick={id:n.id,ts:now};
+          clearTimeout(clickTimer);
+          clickTimer=setTimeout(()=>{   // 延迟执行,给双击留取消窗口
+            if(n.type==='center'){focusStack.length=0;applyFocus();}
+            else focusNode(n.id);
+          },260);
+        }
+      }}
     if(drag)gKick(0.35);   // 松手后让簇继续找平衡直至静止
     drag=null;dragKids=null;panning=false;downAt=null;cv.classList.remove('dragging');});
+  cv.addEventListener('contextmenu',e=>{e.preventDefault();popFocus();});
   cv.addEventListener('wheel',e=>{e.preventDefault();const G=GRAPH;if(!G)return;
     const[mx,my]=pos(e);
     const f=e.deltaY<0?1.15:1/1.15;
     const ns=Math.max(0.25,Math.min(4,G.scale*f));
     G.tx=mx-(mx-G.tx)*(ns/G.scale);G.ty=my-(my-G.ty)*(ns/G.scale);G.scale=ns;drawGraph();},{passive:false});
   $('gfDone').addEventListener('change',()=>{if(DATA)buildGraph(true);});
-  $('gfScale').addEventListener('change',()=>{if(DATA){GRAPH=null;buildGraph(true);}});
-  $('gfGoal').addEventListener('change',()=>{if(DATA){GRAPH=null;buildGraph(true);}});
-  $('gfReset').addEventListener('click',()=>{if(!GRAPH)return;GRAPH.nodes.forEach(n=>{if(n.type!=='center')n.pin=false;});GRAPH=null;$('gfGoal').value='';$('gfScale').value='';buildGraph(true);});
+  $('gfScale').addEventListener('change',()=>{if(DATA){focusStack.length=0;GRAPH=null;buildGraph(true);}});
+  $('gfGoal').addEventListener('change',()=>{if(DATA){focusStack.length=0;GRAPH=null;buildGraph(true);}});
+  $('gfReset').addEventListener('click',()=>{if(!GRAPH)return;GRAPH.nodes.forEach(n=>{if(n.type!=='center')n.pin=false;});focusStack.length=0;GRAPH=null;$('gfGoal').value='';$('gfScale').value='';buildGraph(true);});
 })();
 
 /* ================= 登录与启动 ================= */
