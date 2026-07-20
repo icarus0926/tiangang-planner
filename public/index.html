@@ -985,10 +985,11 @@ function renderGantt(containerId,mode){
           title="${esc(t.name)} · 未排期:点击=按父范围排期,拖动/拖两端=调整"><span class="mg-h l"></span><span class="mg-h r"></span></div>`;
       }
     }
-    const luxT=t.start_date?'取消排期(退回规划池)':'';
+    const er=effRange(t);
+    const luxT=t.start_date?'取消排期(退回规划池)':(er&&er.env?'取消整棵子树的排期':'');
     return`<div class="mg-row${open?' openrow':''}${t.status==='done'?' rowdone':''}" data-rowtid="${t.id}" data-depth="${d}">
       <div class="mg-label${kids?' haskids':''}" data-lab="${t.id}" draggable="true" style="padding-left:${d*16}px" title="${esc(t.name)}${kids?' · 点击展开子任务':''} · 上下拖动调整顺序">
-        ${luxT?`<span class="lux" data-lux="${t.id}" title="${luxT}">×</span>`:''}${caret}${cbHtml(t,'gcb')}<span class="lt">${esc(t.name)}</span>${nmBadge(t)}
+        ${luxT?`<span class="lux" data-lux="${t.id}" title="${luxT}">×</span>`:'<span class="lux" style="visibility:hidden">×</span>'}${caret}${cbHtml(t,'gcb')}<span class="lt">${esc(t.name)}</span>${nmBadge(t)}
       </div><div class="mg-track">${bar}</div></div>`;
   }).join('');
   html+=`<div class="mg-row" style="min-height:38px"><div class="mg-label"></div><div class="mg-track mg-drop">${todayLine}<span class="mg-drophint">${isMonth?'⬆ 从"本月规划池"拖任务到此排期(默认3天,可拖动调整)':'⬇ 从下方"本周任务"拖任务名到此排期/改期'}</span></div></div>`;
@@ -1065,9 +1066,15 @@ function bindGantt(el,b,isMonth){
     x.addEventListener('pointerdown',e=>e.stopPropagation());
     x.addEventListener('click',e=>{e.stopPropagation();
       const t=MAP.get(+x.dataset.lux);if(!t)return;
-      const f={start_date:null,end_date:null};
-      if(!t.parent_id&&!t.month)f.month=viewMonth;
-      patchTask(t.id,f,'已取消排期,退回规划池');});});
+      if(t.start_date){   // 自身有排期:取消并退回规划池
+        const f={start_date:null,end_date:null};
+        if(!t.parent_id&&!t.month)f.month=viewMonth;
+        patchTask(t.id,f,'已取消排期,退回规划池');
+      }else{              // 信封行:批量取消整棵子树的排期
+        const ds=subDated(t);if(!ds.length)return;
+        if(!confirm(`取消「${t.name}」整棵子树的排期(共 ${ds.length} 条)?\n任务都保留,仅清除日期。`))return;
+        mutate(async()=>{for(const dd of ds)await api('PATCH','/api/task/'+dd.id,{start_date:null,end_date:null});},'已取消整棵子树的排期');
+      }});});
   el.querySelectorAll('.mg-addinp').forEach(inp=>{
     inp.addEventListener('pointerdown',e=>e.stopPropagation());
     inp.addEventListener('keydown',e=>{
