@@ -54,6 +54,10 @@ CREATE TABLE IF NOT EXISTS audit (
   entity TEXT, entity_id INTEGER, action TEXT,
   before_json TEXT, after_json TEXT
 );
+CREATE TABLE IF NOT EXISTS meta (
+  key TEXT PRIMARY KEY,
+  value TEXT
+);
 `;
 
 function open(dbPath = DB_PATH) {

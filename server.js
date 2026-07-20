@@ -74,7 +74,9 @@ app.get('/api/data', (req, res) => {
     tasks.forEach(calc);
     const out = tasks.map(t => ({ ...t, leaves: prog.get(t.id).leaves, done_leaves: prog.get(t.id).done }));
     const executions = db.prepare(`SELECT e.*, t.name AS task_name, t.parent_id AS task_parent FROM executions e LEFT JOIN tasks t ON t.id=e.task_id WHERE e.date >= date('now','-45 day') ORDER BY e.id`).all();
-    res.json({ goals, tasks: out, executions, snapshot: new Date().toISOString() });
+    let tags = null;
+    try { const r = db.prepare(`SELECT value FROM meta WHERE key='tags'`).get(); if (r) tags = JSON.parse(r.value); } catch (_) { }
+    res.json({ goals, tasks: out, executions, tags, snapshot: new Date().toISOString() });
   } catch (e) { res.status(500).json({ error: String(e) }); }
 });
 
@@ -311,6 +313,18 @@ app.post('/api/execution/:id/promote', (req, res) => {
     });
     audit('execution', id, 'promote', ex, { task_id: task.id });
     res.json({ ok: true, task });
+  } catch (e) { res.status(500).json({ error: String(e) }); }
+});
+
+// ---- 标签列表(自定义分类,整表存 meta) ----
+app.post('/api/tags', (req, res) => {
+  try {
+    let { tags } = req.body || {};
+    if (!Array.isArray(tags)) return res.status(400).json({ error: 'tags must be array' });
+    tags = [...new Set(tags.map(x => String(x).trim()).filter(x => x && x.length <= 12 && x !== '其他'))].slice(0, 30);
+    db.prepare(`INSERT INTO meta(key,value) VALUES('tags',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(JSON.stringify(tags));
+    audit('meta', null, 'tags', null, { tags });
+    res.json({ ok: true, tags });
   } catch (e) { res.status(500).json({ error: String(e) }); }
 });
 

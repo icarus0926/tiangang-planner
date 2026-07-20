@@ -238,6 +238,23 @@
   #modal .cand .cc{font-size:11px;color:var(--text3);margin-left:auto;flex:none}
   #modal .topopt{border:1px dashed #d8d4cf;border-radius:8px;margin-bottom:8px;color:var(--text2)}
   .inedit{padding:3px 8px;border:1px solid var(--blue);border-radius:6px;font-size:inherit;font-family:inherit;width:100%;min-width:120px}
+  /* 编辑弹窗 */
+  #editPop{position:fixed;inset:0;background:rgba(30,26,20,.35);z-index:60;display:none;align-items:flex-start;justify-content:center;padding-top:16vh}
+  #editPop.show{display:flex}
+  #editPop .box{background:#fff;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.18);width:min(430px,92vw);padding:20px 22px;display:flex;flex-direction:column;gap:11px}
+  #editPop h3{font-size:15px}
+  #editPop input,#editPop select{padding:8px 11px;border:1px solid var(--border);border-radius:8px;font-size:13.5px}
+  .eprow{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text2)}
+  .eprow select{flex:1;min-width:0}
+  .epbtns{display:flex;justify-content:flex-end;gap:8px;margin-top:2px}
+  #epOk{padding:8px 20px;border:none;border-radius:8px;background:var(--text);color:#fff;font-size:13px;cursor:pointer}
+  /* 任务池:已分配深色 + 拖拽反馈 */
+  .pcard{cursor:grab}
+  .pcard:active{cursor:grabbing}
+  .pcard.assigned{background:#ebe6df;border-color:#d8d1c6}
+  .pcard.assigned .pc-t{color:#6b655d}
+  .pcard .asg{font-size:10.5px;color:#fff;background:#8a8378;padding:0 7px;border-radius:9px;line-height:17px;flex:none}
+  .pl-cards.tagover{background:#eef7f0;border-radius:10px;outline:1.5px dashed var(--green)}
   .flash{animation:flashbg 1.8s ease}
   @keyframes flashbg{0%{background:#fdf0cf}60%{background:#fdf0cf}100%{background:transparent}}
 </style>
@@ -252,6 +269,14 @@
   <h3 id="mdTitle">挂到…</h3><div class="mhint" id="mdHint"></div>
   <input id="mdSearch" placeholder="搜索任务名…">
   <div class="list" id="mdList"></div>
+</div></div>
+<div id="editPop"><div class="box">
+  <h3>编辑任务</h3>
+  <input id="epName" placeholder="任务名称">
+  <div class="eprow"><label>标签</label><select id="epTag"></select>
+    <label>优先级</label><select id="epPr"><option value="">无</option><option>P0</option><option>P1</option><option>P2</option></select></div>
+  <div class="eprow" id="epNewRow" style="display:none"><label>新标签</label><input id="epNewTag" placeholder="输入新标签名(≤12字)" style="flex:1"></div>
+  <div class="epbtns"><button class="ghostbtn" id="epCancel">取消</button><button id="epOk">保存</button></div>
 </div></div>
 <div class="app">
   <aside class="side">
@@ -409,6 +434,7 @@ function buildIndex(){
   for(const t of DATA.tasks){if(t.parent_id!=null){if(!KIDS.has(t.parent_id))KIDS.set(t.parent_id,[]);KIDS.get(t.parent_id).push(t);}}
   const cmp=(a,b)=>((a.sort??1e12)-(b.sort??1e12))||(a.id-b.id);
   for(const arr of KIDS.values())arr.sort(cmp);
+  rebuildTags();
 }
 async function mutate(fn,okMsg){
   try{const r=await fn();await reload();if(okMsg)toast(okMsg);return r;}
@@ -437,15 +463,24 @@ function effRange(t){
   return{s,e,env:true};
 }
 const kindOf=t=>rootOf(t).kind||'其他';
-/* 标签体系:kind 字段即标签,根的标签决定整棵树;老值(个人成长等)归入"其他" */
-const TAGS=['工作','学习','投资','副业','生活','其他'];
-const TAGHEX={'工作':'#e8833a','学习':'#3b82d6','投资':'#b8860b','副业':'#8b62c9','生活':'#d4699e','其他':'#9ca3af'};
+/* 标签体系:kind 字段即标签,根的标签决定整棵树;列表动态(服务端 meta 持久化+数据中实际出现的),"其他"永远垫底兜未知 */
+const DEFAULT_TAGS=['工作','学习','投资','副业','生活'];
+let TAGS=[...DEFAULT_TAGS,'其他'];
+const BUILTIN_HEX={'工作':'#e8833a','学习':'#3b82d6','投资':'#b8860b','副业':'#8b62c9','生活':'#d4699e','其他':'#9ca3af'};
+const TAGPALETTE=['#0d9488','#c2703d','#5b8def','#a34a8e','#6b8e23','#b05c5c','#7c6bd6','#3a9d8f'];
+const tagHex=tg=>BUILTIN_HEX[tg]||TAGPALETTE[[...String(tg)].reduce((h,c)=>(h*31+c.charCodeAt(0))>>>0,0)%TAGPALETTE.length];
+function rebuildTags(){
+  const set=new Set(Array.isArray(DATA.tags)&&DATA.tags.length?DATA.tags:DEFAULT_TAGS);
+  for(const t of DATA.tasks)if(!t.parent_id&&t.kind&&t.kind!=='其他'&&t.kind!=='个人成长')set.add(t.kind);
+  set.delete('其他');
+  TAGS=[...set,'其他'];
+}
 const tagOf=t=>{const k=kindOf(t);return TAGS.includes(k)?k:'其他';};
 const nextTag=k=>TAGS[(TAGS.indexOf(k)+1)%TAGS.length];
-const tagBadge=(t,attr='')=>{const tg=tagOf(t),h=TAGHEX[tg];
+const tagBadge=(t,attr='')=>{const tg=tagOf(t),h=tagHex(tg);
   return`<span class="type" ${attr} style="background:${h}1f;color:${h}${attr?';cursor:pointer':''}" title="${attr?'点击切换标签':'标签(随根任务)'}">${tg}</span>`;};
-const kindColor=t=>t.status==='done'?'var(--green)':TAGHEX[tagOf(t)];
-const srcBadge=t=>{const h=TAGHEX[tagOf(t)];return`<span class="srcbadge" style="background:${h}1f;color:${h}">${tagOf(t)}</span>`;};
+const kindColor=t=>t.status==='done'?'var(--green)':tagHex(tagOf(t));
+const srcBadge=t=>{const h=tagHex(tagOf(t));return`<span class="srcbadge" style="background:${h}1f;color:${h}">${tagOf(t)}</span>`;};
 /* 完成记录:每个完成簇只取最高 done 节点(父非done),done_at 落在时间窗内 → 供年/月/周/日各维度"已完成"清单;统一按 done_at=完成历史 */
 function doneRoots(inWin){
   return DATA.tasks.filter(t=>t.status==='done'&&t.done_at
@@ -570,38 +605,86 @@ function renderMonth(){
   if(monthMode==='gantt')renderGantt('gantt','month');else renderOutline();
 }
 function renderPool(){
-  const pool=DATA.tasks.filter(t=>!t.parent_id&&t.status==='pool');
-  $('poolCnt').textContent=pool.length+' 个待分配';
+  const pool=DATA.tasks.filter(t=>!t.parent_id&&(t.status==='pool'||t.status==='planned'));
+  const un=pool.filter(t=>t.status==='pool').length;
+  $('poolCnt').textContent=`${un} 未分配 · ${pool.length-un} 已分配`;
   $('poolLayers').innerHTML=TAGS.map(tag=>{
     const list=pool.filter(t=>tagOf(t)===tag)
-      .sort((a,c)=>(prRank(a)-prRank(c))||(a.id-c.id));   // 组内仍按优先级排,只是不再按优先级分层
-    if(!list.length)return'';
-    const h=TAGHEX[tag];
-    return `<div class="pool-layer"><div class="pl-lab" style="color:${h};width:34px">${tag}</div><div class="pl-cards">${list.map(t=>
-      `<div class="pcard" data-tid="${t.id}"><span class="badge ${prClass(t.priority)}" data-pr="${t.id}" title="点击切换优先级">${t.priority||'–'}</span>
+      .sort((a,c)=>((a.status==='planned')-(c.status==='planned'))||(prRank(a)-prRank(c))||(a.id-c.id));
+    const h=tagHex(tag);
+    const custom=!BUILTIN_HEX[tag];
+    const cards=list.map(t=>{
+      const asg=t.status==='planned';
+      const asgTxt=asg?(t.month?`已排 ${+t.month.slice(5,7)}月`:(t.start_date?`已排 ${fmtMD(t.start_date)}→${fmtMD(t.end_date)}`:'已排')):'';
+      return `<div class="pcard${asg?' assigned':''}" data-pdrag="${t.id}" draggable="true" title="${esc(t.name)} · 拖到其他分类行=改标签">
+       <span class="badge ${prClass(t.priority)}" data-pr="${t.id}" title="点击切换优先级">${t.priority||'–'}</span>
        <span class="pc-t" title="${esc(t.name)}">${esc(t.name)}</span>
-       <span class="badge" data-tag="${t.id}" style="background:${h}1f;color:${h}" title="点击切换标签">${tag}</span>
-       <span class="ab ed" data-ed="${t.id}" title="改名">✎</span>
-       <span class="chipbtn" data-in="${t.id}" title="排入本月规划池">→ 月</span>
-       <span class="ab rm" data-rm="${t.id}" title="归档">×</span></div>`).join('')}</div></div>`;
-  }).join('')||'<div style="color:var(--text3);font-size:12.5px">池是空的</div>';
+       ${asg?`<span class="asg" title="已进入月度规划${t.month?'('+t.month+')':''}">${asgTxt}</span>`:''}
+       <span class="ab ed" data-ed2="${t.id}" title="编辑(名称/标签/优先级)">✎</span>
+       ${asg?`<span class="ab rs" data-unasg="${t.id}" title="退回池(取消月份与排期)">↩</span>`
+            :`<span class="chipbtn" data-in="${t.id}" title="排入本月规划池">→ 月</span>`}
+       <span class="ab rm" data-rm="${t.id}" title="归档">×</span></div>`;}).join('');
+    return `<div class="pool-layer">
+      <div class="pl-lab" style="color:${h};width:auto;min-width:36px;display:flex;align-items:center;gap:3px">${esc(tag)}<span class="ab in" data-tadd2="${esc(tag)}" title="在「${esc(tag)}」下添加任务" style="opacity:.55">＋</span>${custom&&!list.length?`<span class="ab rm" data-tagdel="${esc(tag)}" title="删除此空标签">×</span>`:''}</div>
+      <div class="pl-cards" data-tagdrop="${esc(tag)}">${cards||`<span style="font-size:12px;color:var(--text3);padding:7px 0">空 · 拖任务到此归类</span>`}</div>
+    </div>
+    <div class="subinp" data-pooladd="${esc(tag)}" style="display:none;margin:2px 0 8px 46px"><input placeholder="在「${esc(tag)}」下添加任务,回车确认…"><button>添加</button></div>`;
+  }).join('')+
+  `<div style="margin-top:8px;display:flex;gap:10px;align-items:center">
+     <button class="ghostbtn" id="newTagBtn">＋ 新建分类</button>
+     <span class="subinp" id="newTagBox" style="display:none;flex:1;margin:0"><input placeholder="新分类名(≤12字),回车创建"><button>创建</button></span>
+   </div>`;
   bindPoolCardOps($('poolLayers'));
 }
 function bindPoolCardOps(root){
-  root.querySelectorAll('[data-tag]').forEach(b=>b.addEventListener('click',()=>{
-    const t=MAP.get(+b.dataset.tag);const to=nextTag(tagOf(t));
-    patchTask(t.id,{kind:to},`标签已切换 → ${to}`);}));
   root.querySelectorAll('[data-pr]').forEach(b=>b.addEventListener('click',()=>{
     const t=MAP.get(+b.dataset.pr);patchTask(t.id,{priority:PRCYCLE[t.priority??'null']??PRCYCLE[t.priority]??null},'优先级已切换');}));
-  root.querySelectorAll('[data-ed]').forEach(b=>b.addEventListener('click',()=>{
-    const t=MAP.get(+b.dataset.ed);const span=b.parentElement.querySelector('.pc-t');
-    inlineEdit(span,t.name,v=>patchTask(t.id,{name:v},'已改名 ✓'));}));
+  root.querySelectorAll('[data-ed2]').forEach(b=>b.addEventListener('click',()=>openTaskEdit(MAP.get(+b.dataset.ed2))));
   root.querySelectorAll('[data-in]').forEach(b=>b.addEventListener('click',()=>{
     const t=MAP.get(+b.dataset.in);patchTask(t.id,{month:viewMonth,status:'planned'},`已排入 ${viewMonth} ✓`);}));
+  root.querySelectorAll('[data-unasg]').forEach(b=>b.addEventListener('click',()=>{
+    const t=MAP.get(+b.dataset.unasg);
+    patchTask(t.id,{month:null,start_date:null,end_date:null,status:'pool'},'已退回未分配');}));
   root.querySelectorAll('[data-rm]').forEach(b=>b.addEventListener('click',()=>{
     const t=MAP.get(+b.dataset.rm);
     if(!confirm(`归档「${t.name}」?整棵子树一起归档,可从审计恢复。`))return;
     mutate(()=>api('DELETE','/api/task/'+t.id),'已归档');}));
+  /* 每组「＋」直建任务 */
+  root.querySelectorAll('[data-tadd2]').forEach(b=>b.addEventListener('click',()=>{
+    const box=root.querySelector(`[data-pooladd="${CSS.escape(b.dataset.tadd2)}"]`);
+    box.style.display=box.style.display==='none'?'flex':'none';box.querySelector('input').focus();}));
+  root.querySelectorAll('[data-pooladd]').forEach(box=>{
+    const submit=()=>{const v=box.querySelector('input').value.trim();if(!v)return;
+      createTask({name:v,kind:box.dataset.pooladd},`已在「${box.dataset.pooladd}」下入池 ✓`);};
+    box.querySelector('button').addEventListener('click',submit);
+    box.querySelector('input').addEventListener('keydown',e=>{if(e.key==='Enter')submit();});});
+  /* 卡片跨组拖拽改标签 */
+  root.querySelectorAll('[data-pdrag]').forEach(card=>{
+    card.addEventListener('dragstart',()=>{dragged={kind:'pooltag',id:+card.dataset.pdrag};card.style.opacity=.4;});
+    card.addEventListener('dragend',()=>{card.style.opacity='';dragged=null;
+      root.querySelectorAll('.tagover').forEach(el=>el.classList.remove('tagover'));});});
+  root.querySelectorAll('[data-tagdrop]').forEach(zone=>{
+    zone.addEventListener('dragover',e=>{if(dragged&&dragged.kind==='pooltag'){e.preventDefault();zone.classList.add('tagover');}});
+    zone.addEventListener('dragleave',()=>zone.classList.remove('tagover'));
+    zone.addEventListener('drop',e=>{zone.classList.remove('tagover');
+      if(!dragged||dragged.kind!=='pooltag')return;e.preventDefault();
+      const t=MAP.get(dragged.id),tag=zone.dataset.tagdrop;
+      if(!t||tagOf(t)===tag)return;
+      patchTask(t.id,{kind:tag},`已移入「${tag}」`);});});
+  /* 空自定义标签删除 + 新建分类 */
+  root.querySelectorAll('[data-tagdel]').forEach(b=>b.addEventListener('click',()=>{
+    const tag=b.dataset.tagdel;
+    mutate(()=>api('POST','/api/tags',{tags:TAGS.filter(x=>x!=='其他'&&x!==tag)}),`分类「${tag}」已删除`);}));
+  const ntBtn=root.querySelector('#newTagBtn'),ntBox=root.querySelector('#newTagBox');
+  if(ntBtn){
+    ntBtn.addEventListener('click',()=>{ntBox.style.display=ntBox.style.display==='none'?'flex':'none';ntBox.querySelector('input').focus();});
+    const submit=()=>{const v=ntBox.querySelector('input').value.trim();
+      if(!v)return;if(v.length>12)return toast('分类名过长(≤12字)');
+      if(TAGS.includes(v))return toast('该分类已存在');
+      mutate(()=>api('POST','/api/tags',{tags:[...TAGS.filter(x=>x!=='其他'),v]}),`分类「${v}」已创建,可拖任务进来`);};
+    ntBox.querySelector('button').addEventListener('click',submit);
+    ntBox.querySelector('input').addEventListener('keydown',e=>{if(e.key==='Enter')submit();});
+  }
 }
 function renderPlanPool(){
   const list=DATA.tasks.filter(t=>t.month===viewMonth&&t.status==='planned');
@@ -1102,11 +1185,42 @@ function renderMdList(q){
 }
 function closeModal(){$('modal').classList.remove('show');mdTask=null;}
 
+/* ================= 任务编辑弹窗(名称/标签/优先级) ================= */
+let epTask=null;
+function openTaskEdit(t){
+  if(!t)return;
+  epTask=t;
+  $('epName').value=t.name;
+  $('epTag').innerHTML=TAGS.map(tg=>`<option value="${esc(tg)}"${tagOf(t)===tg?' selected':''}>${esc(tg)}</option>`).join('')+'<option value="__new__">＋ 新建标签…</option>';
+  $('epPr').value=t.priority||'';
+  $('epNewRow').style.display='none';$('epNewTag').value='';
+  $('editPop').classList.add('show');
+  setTimeout(()=>$('epName').focus(),40);
+}
+function closeTaskEdit(){$('editPop').classList.remove('show');epTask=null;}
+async function saveTaskEdit(){
+  if(!epTask)return;
+  const name=$('epName').value.trim();
+  if(!name)return toast('名称不能为空');
+  let kind=$('epTag').value;
+  if(kind==='__new__'){
+    kind=$('epNewTag').value.trim();
+    if(!kind)return toast('请输入新标签名');
+    if(kind.length>12)return toast('标签名过长(≤12字)');
+    if(!TAGS.includes(kind)){
+      try{await api('POST','/api/tags',{tags:[...TAGS.filter(x=>x!=='其他'),kind]});}
+      catch(e){return toast('保存标签失败:'+e.message);}
+    }
+  }
+  const t=epTask;closeTaskEdit();
+  await patchTask(t.id,{name,kind,priority:$('epPr').value||null},'已保存 ✓');
+}
+
 /* ================= 任务全景图(自绘力导向,零依赖) ================= */
 let GRAPH=null;
 const DOMHEX=['#3b82d6','#e8833a','#8b62c9','#3da56b','#d6534f','#d4699e','#a07850'];
 const domHex=s=>{let h=0;for(const c of String(s||''))h=(h*31+c.charCodeAt(0))>>>0;return DOMHEX[h%DOMHEX.length];};
-const taskHex=t=>t.status==='done'?'#3da56b':t.status==='pool'?'#c0b9ae':(TAGHEX[tagOf(t)]||'#3b82d6');
+const taskHex=t=>t.status==='done'?'#3da56b':t.status==='pool'?'#c0b9ae':tagHex(tagOf(t));
 function taskActive(t){
   if(t.month===ymOf(today()))return true;
   const ws=fmtDate(mondayOf(new Date())),we=addDays(ws,6);
@@ -1222,7 +1336,7 @@ function buildGraph(force){
   $('graphCnt').textContent=` ${nodes.filter(n=>n.type==='task').length} 任务 · ${goals.length} 目标`;
   $('graphLegend').innerHTML=
     `<div><i style="background:#d4a017"></i>年度目标(领域色)</div>`+
-    TAGS.filter(tg=>tg!=='其他').map(tg=>`<div><i style="background:${TAGHEX[tg]}"></i>${tg}</div>`).join('')+
+    TAGS.filter(tg=>tg!=='其他').map(tg=>`<div><i style="background:${tagHex(tg)}"></i>${tg}</div>`).join('')+
     `<div><i style="background:#c0b9ae"></i>池·待分配</div>
      <div><i style="background:#3da56b"></i>已完成</div><div><i style="border:2px solid #26221d;background:#fff"></i>本月/本周进行中</div>`;
 }
@@ -1364,6 +1478,13 @@ async function tryLogin(){
   $('pw').addEventListener('keydown',e=>{if(e.key==='Enter')tryLogin();});
   $('modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal();});
   $('mdSearch').addEventListener('input',()=>renderMdList($('mdSearch').value.trim().toLowerCase()));
+  /* 编辑弹窗 */
+  $('epOk').addEventListener('click',saveTaskEdit);
+  $('epCancel').addEventListener('click',closeTaskEdit);
+  $('editPop').addEventListener('click',e=>{if(e.target.id==='editPop')closeTaskEdit();});
+  $('epTag').addEventListener('change',()=>{const nw=$('epTag').value==='__new__';$('epNewRow').style.display=nw?'flex':'none';if(nw)$('epNewTag').focus();});
+  $('epName').addEventListener('keydown',e=>{if(e.key==='Enter')saveTaskEdit();if(e.key==='Escape')closeTaskEdit();});
+  $('epNewTag').addEventListener('keydown',e=>{if(e.key==='Enter')saveTaskEdit();if(e.key==='Escape')closeTaskEdit();});
   /* 时间导航 */
   $('mPrev').addEventListener('click',()=>{viewMonth=nextMonth(viewMonth,-1);renderMonth();});
   $('mNext').addEventListener('click',()=>{viewMonth=nextMonth(viewMonth,1);renderMonth();});

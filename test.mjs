@@ -137,6 +137,13 @@ await api('PATCH', `/api/goal/${g.id}`, { progress: 40 });
 data = (await api('GET', '/api/data')).body;
 ok(data.goals.find(x => x.id === g.id).progress === 40, '目标增改');
 
+// ── 标签持久化
+const tg = (await api('POST', '/api/tags', { tags: ['工作', '学习', '自定义X'] })).body;
+ok(tg.ok && tg.tags.length === 3, '保存标签列表(去重校验)');
+data = (await api('GET', '/api/data')).body;
+ok(Array.isArray(data.tags) && data.tags.includes('自定义X'), 'GET /api/data 返回自定义标签');
+ok((await api('POST', '/api/tags', { tags: 'bad' })).status === 400, '标签校验:非数组 400');
+
 // ── 审计
 const { createRequire: cr } = await import('node:module');
 const { open } = cr(import.meta.url)('./db.js');
