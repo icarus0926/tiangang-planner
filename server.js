@@ -125,7 +125,8 @@ app.post('/api/task', (req, res) => {
     if (!name || !name.trim()) return res.status(400).json({ error: 'missing name' });
     if (parent_id && !getTask(parent_id)) return res.status(400).json({ error: 'parent not found' });
     const parent = parent_id ? getTask(parent_id) : null;
-    const status = (month || start || parent) ? 'planned' : 'pool';   // 生根尺度决定初始状态
+    // 生根尺度决定初始状态:有时间/父→planned;仅挂目标→goal(目标区,不进池);裸→pool
+    const status = (month || start || parent) ? 'planned' : (goal_id ? 'goal' : 'pool');
     const r = db.prepare(`INSERT INTO tasks(parent_id,goal_id,name,kind,priority,status,month,start_date,end_date,sort)
       VALUES(?,?,?,?,?,?,?,?,?,(SELECT COALESCE(MAX(sort),0)+10 FROM tasks WHERE parent_id IS ?))`)
       .run(parent_id ?? null, goal_id ?? null, name.trim(),
@@ -184,8 +185,8 @@ app.post('/api/task/:id/toggle-done', (req, res) => {
       if (nowDone) {
         db.prepare(`UPDATE tasks SET status='done', done_at=? WHERE id IN (${ph}) AND status!='archived'`).run(today(), ...ids);
       } else {
-        // 重开整棵子树:各节点按自身字段回落 planned/pool(有月份/日期/父→planned,否则回池)
-        db.prepare(`UPDATE tasks SET status=CASE WHEN month IS NOT NULL OR start_date IS NOT NULL OR parent_id IS NOT NULL THEN 'planned' ELSE 'pool' END, done_at=NULL WHERE id IN (${ph}) AND status!='archived'`).run(...ids);
+        // 重开整棵子树:各节点按自身字段回落(有月份/日期/父→planned;仅挂目标→goal;否则回池)
+        db.prepare(`UPDATE tasks SET status=CASE WHEN month IS NOT NULL OR start_date IS NOT NULL OR parent_id IS NOT NULL THEN 'planned' WHEN goal_id IS NOT NULL THEN 'goal' ELSE 'pool' END, done_at=NULL WHERE id IN (${ph}) AND status!='archived'`).run(...ids);
       }
       bubbleDone(id);   // 再向上冒泡更新祖先(兄弟未完成则父保持未完成)
     });
@@ -222,8 +223,8 @@ app.post('/api/task/:id/restore', (req, res) => {
     if (!t || t.status !== 'archived' && t.status !== 'done') return res.status(400).json({ error: 'only archived/done can restore' });
     const ids = descendantIds(id);
     tx(db, () => {
-      // 恢复整棵子树:有月份/日期/父 → planned,否则回池;done 的恢复为未完成
-      db.prepare(`UPDATE tasks SET status=CASE WHEN month IS NOT NULL OR start_date IS NOT NULL OR parent_id IS NOT NULL THEN 'planned' ELSE 'pool' END, done_at=NULL WHERE id IN (${ids.map(() => '?').join(',')})`).run(...ids);
+      // 恢复整棵子树:有月份/日期/父 → planned;仅挂目标→goal;否则回池;done 的恢复为未完成
+      db.prepare(`UPDATE tasks SET status=CASE WHEN month IS NOT NULL OR start_date IS NOT NULL OR parent_id IS NOT NULL THEN 'planned' WHEN goal_id IS NOT NULL THEN 'goal' ELSE 'pool' END, done_at=NULL WHERE id IN (${ids.map(() => '?').join(',')})`).run(...ids);
       bubbleDone(id);
     });
     audit('task', id, 'restore', { status: t.status }, { subtree: ids.length });

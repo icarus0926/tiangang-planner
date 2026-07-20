@@ -137,6 +137,13 @@ await api('PATCH', `/api/goal/${g.id}`, { progress: 40 });
 data = (await api('GET', '/api/data')).body;
 ok(data.goals.find(x => x.id === g.id).progress === 40, '目标增改');
 
+// ── 目标区任务:仅挂目标生根 → status='goal'(不进池);PATCH 放行入池
+const gt = (await api('POST', '/api/task', { name: '目标区任务', goal_id: g.id })).body.task;
+ok(gt.status === 'goal', '仅挂目标生根 → goal 状态(不进任务池)');
+await api('PATCH', `/api/task/${gt.id}`, { status: 'pool' });
+data = (await api('GET', '/api/data')).body;
+ok(find(gt.id).status === 'pool', 'PATCH status:pool → 放行入任务池');
+
 // ── 标签持久化
 const tg = (await api('POST', '/api/tags', { tags: ['工作', '学习', '自定义X'] })).body;
 ok(tg.ok && tg.tags.length === 3, '保存标签列表(去重校验)');

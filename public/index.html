@@ -137,7 +137,7 @@
   @media(max-width:720px){.mg-row{grid-template-columns:110px 1fr}}
   .mg-label{display:flex;align-items:center;padding-right:10px;font-size:12.5px;color:var(--text2);overflow:hidden;white-space:nowrap}
   .mg-label .lt{min-width:0;overflow:hidden;text-overflow:ellipsis}
-  .mg-label .lux{flex:none;margin-left:4px;width:16px;height:16px;line-height:14px;text-align:center;border-radius:50%;
+  .mg-label .lux{flex:none;margin-right:2px;width:16px;height:16px;line-height:14px;text-align:center;border-radius:50%;
     cursor:pointer;font-size:12px;color:var(--text3);opacity:0;transition:all .12s}
   .mg-row:hover .mg-label .lux{opacity:.7}
   .mg-label .lux:hover{background:#fbe9e7;color:#c04531;opacity:1}
@@ -417,6 +417,7 @@ let viewWeekMon=fmtDate(mondayOf(new Date()));
 let viewDay=today();
 let monthMode='gantt';
 const expanded=new Set();
+const goalOpen=new Set();   // 年度目标卡展开态(目标 id)
 let dragged=null;
 
 /* ================= API ================= */
@@ -511,6 +512,36 @@ function inlineEdit(el,cur,commit){
   inp.addEventListener('blur',()=>end(true));
 }
 
+/* ===== 共享子树组件:递归行(整行点击展开)+常驻添加行+统一绑定(编辑弹窗/归档/加子) ===== */
+const treeAddRow=(t,d)=>`<div class="subinp" data-psubinp="${t.id}" style="margin:2px 0 10px ${d*22+30}px"><input placeholder="添加一个子任务,回车确认…"><button>添加</button></div>`;
+const treeRow=(t,d)=>{
+  const open=expanded.has(t.id);
+  let h=`<div class="mrow" data-prow="${t.id}" style="padding-left:${d*22}px;cursor:pointer;min-height:38px" title="点击展开/收起">
+    <span class="mg-caret${open?' open':''}">▸</span>
+    ${cbHtml(t,'tcb')}${nmBadge(t)}
+    <span class="name">${esc(t.name)}</span>
+    ${t.start_date?`<span class="datechip">${fmtMD(t.start_date)}→${fmtMD(t.end_date)}</span>`:''}
+    <span class="ops"><span class="ab ed" data-ed2="${t.id}" title="编辑(名称/标签/优先级)">✎</span><span class="ab rm" data-parc="${t.id}" title="归档删除(整棵子树)">×</span></span>
+  </div>`;
+  if(open){h+=kidsOf(t.id).map(k=>treeRow(k,d+1)).join('');h+=treeAddRow(t,d+1);}
+  return h;};
+function bindTreeCommon(root,rerender){
+  root.querySelectorAll('.mrow[data-prow]').forEach(row=>row.addEventListener('click',e=>{
+    if(e.target.closest('.ab,.badge,.type,.chipbtn,.asg,input,button'))return;
+    const id=+row.dataset.prow;expanded.has(id)?expanded.delete(id):expanded.add(id);rerender();}));
+  root.querySelectorAll('[data-psubinp]').forEach(box=>{
+    const submit=()=>{const v=box.querySelector('input').value.trim();if(!v)return;
+      expanded.add(+box.dataset.psubinp);
+      createTask({name:v,parent_id:+box.dataset.psubinp},'子任务已创建 ✓');};
+    box.querySelector('button').addEventListener('click',submit);
+    box.querySelector('input').addEventListener('keydown',e=>{if(e.key==='Enter')submit();});});
+  root.querySelectorAll('[data-ed2]').forEach(b=>b.addEventListener('click',()=>openTaskEdit(MAP.get(+b.dataset.ed2))));
+  root.querySelectorAll('[data-parc]').forEach(b=>b.addEventListener('click',()=>{
+    const t=MAP.get(+b.dataset.parc);if(!t)return;
+    if(!confirm(`归档删除「${t.name}」?整棵子树一起归档。`))return;
+    mutate(()=>api('DELETE','/api/task/'+t.id),'已归档');}));
+}
+
 /* ================= 渲染总控 ================= */
 function renderAll(){
   if(!DATA)return;
@@ -559,9 +590,26 @@ function renderYear(){
       ${g.criteria?`<div class="crit">${esc(g.criteria)}</div>`:''}
       <div class="pctline"><div class="pbar" style="flex:1"><i style="width:${g.progress||0}%;background:${domColor(g.domain)}"></i></div>
         <input class="pin gprog" type="number" min="0" max="100" value="${g.progress||0}">%</div>
-      <div class="pctline"><span>挂载任务 ${mts.length} 个${leaves?` · 叶子 ${dl}/${leaves}`:''}</span>
-        <span class="ghostbtn gaddt" style="margin-left:auto;padding:2px 10px">＋任务</span></div>
-      <div class="addline gaddbox" style="display:none"><input placeholder="挂在此目标下的任务(入池)"><button>创建</button></div>
+      <div class="pctline" data-gexp="${g.id}" style="cursor:pointer" title="点击展开/收起挂载任务">
+        <span class="mg-caret${goalOpen.has(g.id)?' open':''}">▸</span>
+        <span>挂载任务 ${mts.filter(t=>!t.parent_id).length} 个${leaves?` · 叶子 ${dl}/${leaves}`:''}</span></div>
+      ${goalOpen.has(g.id)?`<div style="border-top:1px dashed var(--border);padding-top:6px">
+        ${mts.filter(t=>!t.parent_id).map(t=>{
+          const open=expanded.has(t.id);
+          const st=t.status==='goal'?'<span class="badge Px" title="仅在目标区,未进任务池">目标区</span>'
+            :t.status==='pool'?'<span class="badge" style="background:#e3edf9;color:#2f6bb3">已在池</span>'
+            :t.status==='planned'?`<span class="asg">已排${t.month?' '+(+t.month.slice(5,7))+'月':''}</span>`
+            :t.status==='done'?'<span class="badge" style="background:#e2f3e8;color:#2e7d4f">已完成</span>':'';
+          let h=`<div class="mrow" data-prow="${t.id}" style="cursor:pointer;min-height:36px" title="点击展开/收起">
+            <span class="mg-caret${open?' open':''}">▸</span>
+            ${cbHtml(t,'tcb')}${nmBadge(t)}
+            <span class="name" style="font-size:13px">${esc(t.name)}</span>${st}
+            <span class="ops"><span class="ab ed" data-ed2="${t.id}" title="编辑">✎</span>${t.status==='goal'?`<span class="chipbtn" data-topool="${t.id}" title="放行进任务池(变为未分配)">→ 池</span>`:''}<span class="ab rm" data-parc="${t.id}" title="归档删除">×</span></span></div>`;
+          if(open){h+=kidsOf(t.id).map(k=>treeRow(k,1)).join('');h+=treeAddRow(t,1);}
+          return h;
+        }).join('')||'<div style="font-size:12px;color:var(--text3);padding:4px 0">还没有挂载任务</div>'}
+        <div class="subinp" data-gadd="${g.id}" style="margin:6px 0 2px"><input placeholder="添加任务到此目标(留在目标区,不进任务池)…"><button>添加</button></div>
+      </div>`:''}
     </div>`;
   }).join('')||'<div style="color:var(--text3);font-size:13px">还没有年度目标,点右上「＋新目标」</div>';
   wrap.querySelectorAll('.goal').forEach(card=>{
@@ -573,24 +621,37 @@ function renderYear(){
     card.querySelector('.gprog').addEventListener('change',e=>{
       const v=Math.max(0,Math.min(100,+e.target.value||0));
       mutate(()=>api('PATCH','/api/goal/'+g.id,{progress:v}),'进度已更新 ✓');});
-    const box=card.querySelector('.gaddbox');
-    card.querySelector('.gaddt').addEventListener('click',()=>{box.style.display=box.style.display==='none'?'flex':'none';box.querySelector('input').focus();});
-    const submit=()=>{const v=box.querySelector('input').value.trim();if(!v)return;createTask({name:v,goal_id:g.id},'已创建并挂到目标 ✓');};
-    box.querySelector('button').addEventListener('click',submit);
-    box.querySelector('input').addEventListener('keydown',e=>{if(e.key==='Enter')submit();});
   });
-  // 本年已完成
+  /* 挂载任务区:展开/放行入池/目标区直建 */
+  wrap.querySelectorAll('[data-gexp]').forEach(el=>el.addEventListener('click',e=>{
+    if(e.target.closest('input,button,.ab'))return;
+    const id=+el.dataset.gexp;goalOpen.has(id)?goalOpen.delete(id):goalOpen.add(id);renderYear();}));
+  wrap.querySelectorAll('[data-topool]').forEach(b=>b.addEventListener('click',()=>{
+    patchTask(+b.dataset.topool,{status:'pool'},'已放行进任务池(未分配) ✓');}));
+  wrap.querySelectorAll('[data-gadd]').forEach(box=>{
+    const submit=()=>{const v=box.querySelector('input').value.trim();if(!v)return;
+      createTask({name:v,goal_id:+box.dataset.gadd},'已挂到目标(留在目标区) ✓');};
+    box.querySelector('button').addEventListener('click',submit);
+    box.querySelector('input').addEventListener('keydown',e=>{if(e.key==='Enter')submit();});});
+  bindTreeCommon(wrap,renderYear);
+  bindCbs(wrap,'tcb');
+  // 本年已完成(按完成月份分组,近月在前)
   const yList=doneRoots(winYear(today().slice(0,4)));
   $('yDoneCnt').textContent=yList.length+' 项(本年完成)';
-  $('yDoneCards').innerHTML=yList.map(t=>{
+  const doneCard=t=>{
     const go=t.goal_id?DATA.goals.find(x=>x.id===rootOf(t).goal_id):null;const cr=crumbs(t);
     return `<div class="pcard" style="background:#f6f5f3">
       <span class="pc-t" style="color:var(--text3)" title="${esc(t.name)} · 完成于 ${t.done_at||''}">${esc(t.name)}</span>
       ${go?`<span class="crumb" title="所属目标">${esc(go.name.slice(0,10))}</span>`:cr?`<span class="crumb" title="${esc(cr)}">${esc(cr)}</span>`:''}
       ${t.leaves>1?`<span class="nm full">${t.done_leaves}/${t.leaves}</span>`:''}
       <span class="datechip">✓ ${fmtMD(t.done_at)}</span>
-      <span class="ab rs" data-yres="${t.id}" title="恢复(重新打开)">↩</span></div>`;
-  }).join('')||'<div style="color:var(--text3);font-size:12.5px">本年还没有完成的任务</div>';
+      <span class="ab rs" data-yres="${t.id}" title="恢复(重新打开)">↩</span></div>`;};
+  const byMonth={};
+  yList.forEach(t=>{(byMonth[t.done_at.slice(0,7)]??=[]).push(t);});
+  $('yDoneCards').innerHTML=Object.keys(byMonth).sort().reverse().map(ym=>
+    `<div style="width:100%"><div style="font-size:12.5px;font-weight:600;color:var(--text2);margin:8px 0 8px">${+ym.slice(5,7)}月 <span style="font-weight:400;color:var(--text3)">· ${byMonth[ym].length} 项</span></div>
+     <div class="pl-cards">${byMonth[ym].map(doneCard).join('')}</div></div>`).join('')
+    ||'<div style="color:var(--text3);font-size:12.5px">本年还没有完成的任务</div>';
   $('yDoneCards').querySelectorAll('[data-yres]').forEach(b=>b.addEventListener('click',()=>
     mutate(()=>api('POST',`/api/task/${b.dataset.yres}/restore`),'已恢复,重新打开 ✓')));
 }
@@ -616,18 +677,24 @@ function renderPool(){
     const cards=list.map(t=>{
       const asg=t.status==='planned';
       const asgTxt=asg?(t.month?`已排 ${+t.month.slice(5,7)}月`:(t.start_date?`已排 ${fmtMD(t.start_date)}→${fmtMD(t.end_date)}`:'已排')):'';
-      return `<div class="pcard${asg?' assigned':''}" data-pdrag="${t.id}" draggable="true" title="${esc(t.name)} · 拖到其他分类行=改标签">
+      return `<div class="pcard${asg?' assigned':''}" data-pdrag="${t.id}" data-pexp="${t.id}" draggable="true" title="${esc(t.name)} · 点击展开子任务 · 拖到其他分类行=改标签">
+       <span class="mg-caret${expanded.has(t.id)?' open':''}" style="width:10px;font-size:9px">▸</span>
        <span class="badge ${prClass(t.priority)}" data-pr="${t.id}" title="点击切换优先级">${t.priority||'–'}</span>
-       <span class="pc-t" title="${esc(t.name)}">${esc(t.name)}</span>
+       <span class="pc-t" title="${esc(t.name)}">${esc(t.name)}</span>${nmBadge(t)}
        ${asg?`<span class="asg" title="已进入月度规划${t.month?'('+t.month+')':''}">${asgTxt}</span>`:''}
        <span class="ab ed" data-ed2="${t.id}" title="编辑(名称/标签/优先级)">✎</span>
        ${asg?`<span class="ab rs" data-unasg="${t.id}" title="退回池(取消月份与排期)">↩</span>`
             :`<span class="chipbtn" data-in="${t.id}" title="排入本月规划池">→ 月</span>`}
        <span class="ab rm" data-rm="${t.id}" title="归档">×</span></div>`;}).join('');
+    const panels=list.filter(t=>expanded.has(t.id)).map(t=>
+      `<div class="card" style="margin:2px 0 8px 46px;padding:4px 14px 8px">
+        <div style="font-size:11.5px;color:var(--text3);padding:6px 0 2px">「${esc(t.name)}」的子任务</div>
+        ${kidsOf(t.id).map(k=>treeRow(k,0)).join('')||''}${treeAddRow(t,0)}</div>`).join('');
     return `<div class="pool-layer">
-      <div class="pl-lab" style="color:${h};width:auto;min-width:36px;display:flex;align-items:center;gap:3px">${esc(tag)}<span class="ab in" data-tadd2="${esc(tag)}" title="在「${esc(tag)}」下添加任务" style="opacity:.55">＋</span>${custom&&!list.length?`<span class="ab rm" data-tagdel="${esc(tag)}" title="删除此空标签">×</span>`:''}</div>
+      <div class="pl-lab" style="color:${h};width:auto;min-width:36px;display:flex;align-items:center;gap:3px"><span class="pl-name" data-tagname="${esc(tag)}">${esc(tag)}</span><span class="ab in" data-tadd2="${esc(tag)}" title="在「${esc(tag)}」下添加任务" style="opacity:.55">＋</span>${tag!=='其他'?`<span class="ab ed" data-tagren="${esc(tag)}" title="重命名分类" style="opacity:.4;font-size:11px">✎</span><span class="ab rm" data-tagdel="${esc(tag)}" title="删除分类(任务归入「其他」)" style="opacity:.4">×</span>`:''}</div>
       <div class="pl-cards" data-tagdrop="${esc(tag)}">${cards||`<span style="font-size:12px;color:var(--text3);padding:7px 0">空 · 拖任务到此归类</span>`}</div>
     </div>
+    ${panels}
     <div class="subinp" data-pooladd="${esc(tag)}" style="display:none;margin:2px 0 8px 46px"><input placeholder="在「${esc(tag)}」下添加任务,回车确认…"><button>添加</button></div>`;
   }).join('')+
   `<div style="margin-top:8px;display:flex;gap:10px;align-items:center">
@@ -635,11 +702,16 @@ function renderPool(){
      <span class="subinp" id="newTagBox" style="display:none;flex:1;margin:0"><input placeholder="新分类名(≤12字),回车创建"><button>创建</button></span>
    </div>`;
   bindPoolCardOps($('poolLayers'));
+  bindTreeCommon($('poolLayers'),renderPool);
+  bindCbs($('poolLayers'),'tcb');
 }
 function bindPoolCardOps(root){
   root.querySelectorAll('[data-pr]').forEach(b=>b.addEventListener('click',()=>{
     const t=MAP.get(+b.dataset.pr);patchTask(t.id,{priority:PRCYCLE[t.priority??'null']??PRCYCLE[t.priority]??null},'优先级已切换');}));
-  root.querySelectorAll('[data-ed2]').forEach(b=>b.addEventListener('click',()=>openTaskEdit(MAP.get(+b.dataset.ed2))));
+  /* 卡片点击展开子任务面板 */
+  root.querySelectorAll('[data-pexp]').forEach(card=>card.addEventListener('click',e=>{
+    if(e.target.closest('.ab,.badge,.chipbtn,.asg,input,button'))return;
+    const id=+card.dataset.pexp;expanded.has(id)?expanded.delete(id):expanded.add(id);renderPool();}));
   root.querySelectorAll('[data-in]').forEach(b=>b.addEventListener('click',()=>{
     const t=MAP.get(+b.dataset.in);patchTask(t.id,{month:viewMonth,status:'planned'},`已排入 ${viewMonth} ✓`);}));
   root.querySelectorAll('[data-unasg]').forEach(b=>b.addEventListener('click',()=>{
@@ -671,10 +743,32 @@ function bindPoolCardOps(root){
       const t=MAP.get(dragged.id),tag=zone.dataset.tagdrop;
       if(!t||tagOf(t)===tag)return;
       patchTask(t.id,{kind:tag},`已移入「${tag}」`);});});
-  /* 空自定义标签删除 + 新建分类 */
+  /* 分类删除(任务归入「其他」)与重命名 */
   root.querySelectorAll('[data-tagdel]').forEach(b=>b.addEventListener('click',()=>{
     const tag=b.dataset.tagdel;
-    mutate(()=>api('POST','/api/tags',{tags:TAGS.filter(x=>x!=='其他'&&x!==tag)}),`分类「${tag}」已删除`);}));
+    const affected=DATA.tasks.filter(t=>!t.parent_id&&t.kind===tag);
+    if(!confirm(`删除分类「${tag}」?${affected.length?`\n其中 ${affected.length} 个任务将归入「其他」。`:''}`))return;
+    (async()=>{
+      try{
+        for(const t of affected)await api('PATCH','/api/task/'+t.id,{kind:'其他'});
+        await api('POST','/api/tags',{tags:TAGS.filter(x=>x!=='其他'&&x!==tag)});
+        await reload();toast(`分类「${tag}」已删除${affected.length?`,${affected.length} 个任务归入「其他」`:''}`);
+      }catch(e){toast('删除失败:'+e.message);await reload().catch(()=>{});}
+    })();}));
+  root.querySelectorAll('[data-tagren]').forEach(b=>b.addEventListener('click',()=>{
+    const old=b.dataset.tagren;
+    const span=b.parentElement.querySelector('.pl-name');
+    inlineEdit(span,old,v=>{
+      if(v.length>12)return toast('分类名过长(≤12字)');
+      if(TAGS.includes(v))return toast('该分类已存在');
+      (async()=>{
+        try{
+          await api('POST','/api/tags',{tags:TAGS.filter(x=>x!=='其他').map(x=>x===old?v:x)});
+          const affected=DATA.tasks.filter(t=>!t.parent_id&&t.kind===old);
+          for(const t of affected)await api('PATCH','/api/task/'+t.id,{kind:v});
+          await reload();toast(`分类「${old}」→「${v}」(${affected.length} 个任务同步)`);
+        }catch(e){toast('重命名失败:'+e.message);await reload().catch(()=>{});}
+      })();});}));
   const ntBtn=root.querySelector('#newTagBtn'),ntBox=root.querySelector('#newTagBox');
   if(ntBtn){
     ntBtn.addEventListener('click',()=>{ntBox.style.display=ntBox.style.display==='none'?'flex':'none';ntBox.querySelector('input').focus();});
@@ -687,19 +781,11 @@ function bindPoolCardOps(root){
   }
 }
 function renderPlanPool(){
-  const list=DATA.tasks.filter(t=>t.month===viewMonth&&t.status==='planned');
-  $('planCnt').textContent=list.length+' 项';
-  const addRowP=(t,d)=>`<div class="subinp" data-psubinp="${t.id}" style="margin:2px 0 10px ${d*22+30}px"><input placeholder="添加一个子任务,回车确认…"><button>添加</button></div>`;
-  const kidRowP=(t,d)=>{
-    const open=expanded.has(t.id);
-    let h=`<div class="mrow" data-prow="${t.id}" style="padding-left:${d*22}px;cursor:pointer;min-height:38px" title="点击展开/收起">
-      <span class="mg-caret${open?' open':''}">▸</span>
-      ${cbHtml(t,'tcb')}${nmBadge(t)}
-      <span class="name">${esc(t.name)}</span>
-      ${t.start_date?`<span class="datechip">${fmtMD(t.start_date)}→${fmtMD(t.end_date)}</span>`:''}
-    </div>`;
-    if(open){h+=kidsOf(t.id).map(k=>kidRowP(k,d+1)).join('');h+=addRowP(t,d+1);}
-    return h;};
+  const s0=viewMonth+'-01',e0=viewMonth+'-'+pad2(daysInMonth(viewMonth));
+  const list=DATA.tasks.filter(t=>t.status==='planned'&&
+    (t.month===viewMonth||(t.start_date&&t.end_date&&t.start_date<=e0&&t.end_date>=s0)));
+  const sched=list.filter(t=>t.start_date).length;
+  $('planCnt').textContent=`${list.length} 项 · ${sched} 已排甘特`;
   $('planList').innerHTML=list.map(t=>{
     const cr=crumbs(t);const open=expanded.has(t.id);
     let h=`<div class="mrow" data-tid="${t.id}" data-prow="${t.id}" draggable="true" style="cursor:pointer" title="点击展开/收起 · 拖到甘特排期">
@@ -709,42 +795,32 @@ function renderPlanPool(){
       ${cr?`<span class="crumb" title="${esc(cr)}">${esc(cr)}</span>`:''}
       ${t.parent_id?tagBadge(t):tagBadge(t,`data-ptag="${t.id}"`)}
       <span class="badge ${prClass(t.priority)}" data-pr="${t.id}" title="点击切换优先级">${t.priority||'–'}</span>
-      ${t.start_date?`<span class="datechip" title="在甘特图中拖拽调整">${fmtMD(t.start_date)}→${fmtMD(t.end_date)}</span>`:''}
+      ${t.start_date?`<span class="asg" title="已排进甘特(${t.start_date}→${t.end_date}),在甘特图中拖拽调整">已排 ${fmtMD(t.start_date)}→${fmtMD(t.end_date)}</span>`:''}
       <span class="ops">
-        <span class="ab ed" data-ed="${t.id}" title="改名">✎</span>
+        <span class="ab ed" data-ed2="${t.id}" title="编辑(名称/标签/优先级)">✎</span>
         ${t.start_date?'':`<span class="ab in" data-sch="${t.id}" title="排期(默认3天,甘特可拖)">⏱</span>`}
         <span class="ab ed" data-rp="${t.id}" title="挂到其他任务下 / 设为顶层">⇄</span>
         ${t.parent_id?`<span class="ab in" data-out="${t.id}" title="独立出去(脱离父任务成顶层)">⇱</span>`
-                     :`<span class="ab rm" data-back="${t.id}" title="退回任务池(清空月份与排期)">×</span>`}
+                     :`<span class="ab rs" data-back="${t.id}" title="退回任务池(清空月份与排期)">↩</span>`}
+        <span class="ab rm" data-parc="${t.id}" title="归档删除(整棵子树)">×</span>
       </span></div>`;
-    if(open){h+=kidsOf(t.id).map(k=>kidRowP(k,1)).join('');h+=addRowP(t,1);}
+    if(open){h+=kidsOf(t.id).map(k=>treeRow(k,1)).join('');h+=treeAddRow(t,1);}
     return h;
   }).join('')||'<div class="mrow" style="color:var(--text3);font-size:13px">本月规划池是空的:从任务池「→月」排入,或下方直接添加</div>';
   $('planList').insertAdjacentHTML('beforeend',
     `<div class="addline" style="margin:10px 0"><input id="nplName" placeholder="＋ 直接添加本月任务"><button id="nplOk">添加</button></div>`);
   const root=$('planList');
   bindCbs(root,'tcb');
+  bindTreeCommon(root,renderPlanPool);
   root.querySelectorAll('[data-pr]').forEach(b=>b.addEventListener('click',()=>{
     const t=MAP.get(+b.dataset.pr);patchTask(t.id,{priority:PRCYCLE[t.priority??'null']??null},'优先级已切换');}));
-  root.querySelectorAll('[data-ed]:not([data-rp])').forEach(b=>b.addEventListener('click',()=>{
-    const t=MAP.get(+b.dataset.ed);const span=b.closest('.mrow').querySelector('.pname');
-    inlineEdit(span,t.name,v=>patchTask(t.id,{name:v},'已改名 ✓'));}));
   root.querySelectorAll('[data-sch]').forEach(b=>b.addEventListener('click',()=>{
     const t=MAP.get(+b.dataset.sch);
     const base=ymOf(today())===viewMonth?today():viewMonth+'-01';
     patchTask(t.id,{start_date:base,end_date:addDays(base,2)},'已排期,去甘特图拖拽调整 ✓');}));
-  root.querySelectorAll('.mrow[data-prow]').forEach(row=>row.addEventListener('click',e=>{
-    if(e.target.closest('.ab,.badge,.type,input,button'))return;
-    const id=+row.dataset.prow;expanded.has(id)?expanded.delete(id):expanded.add(id);renderPlanPool();}));
   root.querySelectorAll('[data-ptag]').forEach(b=>b.addEventListener('click',()=>{
     const t=MAP.get(+b.dataset.ptag);const to=nextTag(tagOf(t));
     patchTask(t.id,{kind:to},`标签已切换 → ${to}`);}));
-  root.querySelectorAll('[data-psubinp]').forEach(box=>{
-    const submit=()=>{const v=box.querySelector('input').value.trim();if(!v)return;
-      expanded.add(+box.dataset.psubinp);
-      createTask({name:v,parent_id:+box.dataset.psubinp},'子任务已创建 ✓');};
-    box.querySelector('button').addEventListener('click',submit);
-    box.querySelector('input').addEventListener('keydown',e=>{if(e.key==='Enter')submit();});});
   root.querySelectorAll('[data-rp]').forEach(b=>b.addEventListener('click',()=>openReparent(MAP.get(+b.dataset.rp))));
   root.querySelectorAll('[data-out]').forEach(b=>b.addEventListener('click',()=>{
     const t=MAP.get(+b.dataset.out);
@@ -912,7 +988,7 @@ function renderGantt(containerId,mode){
     const luxT=t.start_date?'取消排期(退回规划池)':'';
     return`<div class="mg-row${open?' openrow':''}${t.status==='done'?' rowdone':''}" data-rowtid="${t.id}" data-depth="${d}">
       <div class="mg-label${kids?' haskids':''}" data-lab="${t.id}" draggable="true" style="padding-left:${d*16}px" title="${esc(t.name)}${kids?' · 点击展开子任务':''} · 上下拖动调整顺序">
-        ${caret}${cbHtml(t,'gcb')}<span class="lt">${esc(t.name)}</span>${nmBadge(t)}${luxT?`<span class="lux" data-lux="${t.id}" title="${luxT}">×</span>`:''}
+        ${luxT?`<span class="lux" data-lux="${t.id}" title="${luxT}">×</span>`:''}${caret}${cbHtml(t,'gcb')}<span class="lt">${esc(t.name)}</span>${nmBadge(t)}
       </div><div class="mg-track">${bar}</div></div>`;
   }).join('');
   html+=`<div class="mg-row" style="min-height:38px"><div class="mg-label"></div><div class="mg-track mg-drop">${todayLine}<span class="mg-drophint">${isMonth?'⬆ 从"本月规划池"拖任务到此排期(默认3天,可拖动调整)':'⬇ 从下方"本周任务"拖任务名到此排期/改期'}</span></div></div>`;
@@ -1191,7 +1267,9 @@ function openTaskEdit(t){
   if(!t)return;
   epTask=t;
   $('epName').value=t.name;
-  $('epTag').innerHTML=TAGS.map(tg=>`<option value="${esc(tg)}"${tagOf(t)===tg?' selected':''}>${esc(tg)}</option>`).join('')+'<option value="__new__">＋ 新建标签…</option>';
+  $('epTag').innerHTML=TAGS.map(tg=>`<option value="${esc(tg)}"${tagOf(t)===tg?' selected':''}>${esc(tg)}</option>`).join('')+(t.parent_id?'':'<option value="__new__">＋ 新建标签…</option>');
+  $('epTag').disabled=!!t.parent_id;
+  $('epTag').title=t.parent_id?'子任务标签随根任务,不可单独修改':'';
   $('epPr').value=t.priority||'';
   $('epNewRow').style.display='none';$('epNewTag').value='';
   $('editPop').classList.add('show');
@@ -1212,15 +1290,18 @@ async function saveTaskEdit(){
       catch(e){return toast('保存标签失败:'+e.message);}
     }
   }
-  const t=epTask;closeTaskEdit();
-  await patchTask(t.id,{name,kind,priority:$('epPr').value||null},'已保存 ✓');
+  const t=epTask;
+  const f={name,priority:$('epPr').value||null};
+  if(!t.parent_id)f.kind=kind;   // 子任务标签随根,不单独写
+  closeTaskEdit();
+  await patchTask(t.id,f,'已保存 ✓');
 }
 
 /* ================= 任务全景图(自绘力导向,零依赖) ================= */
 let GRAPH=null;
 const DOMHEX=['#3b82d6','#e8833a','#8b62c9','#3da56b','#d6534f','#d4699e','#a07850'];
 const domHex=s=>{let h=0;for(const c of String(s||''))h=(h*31+c.charCodeAt(0))>>>0;return DOMHEX[h%DOMHEX.length];};
-const taskHex=t=>t.status==='done'?'#3da56b':t.status==='pool'?'#c0b9ae':tagHex(tagOf(t));
+const taskHex=t=>t.status==='done'?'#3da56b':(t.status==='pool'||t.status==='goal')?'#c0b9ae':tagHex(tagOf(t));
 function taskActive(t){
   if(t.month===ymOf(today()))return true;
   const ws=fmtDate(mondayOf(new Date())),we=addDays(ws,6);
