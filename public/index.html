@@ -1397,12 +1397,17 @@ function graphSimulate(nodes,edges,ticks){
   const idx=Object.fromEntries(nodes.map((n,i)=>[n.id,i]));
   for(let t=0;t<ticks;t++)graphStep(nodes,edges,idx,1-t/ticks);
 }
-/* 聚焦下钻:左键单击=聚焦节点子树(栈),右键=返回上层,双击=跳页 */
-let focusStack=[];
+/* 聚焦下钻:左键单击=聚焦节点子树,右键=返回上一级(层级父节点),双击=跳页 */
+let focusId=null;
 function gDescIds(nid){
   const G=GRAPH,set=new Set([nid]),st=[nid];
   while(st.length){const c=st.pop();for(const e of G.edges)if(e[0]===c&&!set.has(e[1])){set.add(e[1]);st.push(e[1]);}}
   return set;
+}
+function gParentOf(nid){
+  const G=GRAPH;if(!G)return null;
+  for(const e of G.edges)if(e[1]===nid)return e[0];   // 树结构:每个节点至多一条入边
+  return null;
 }
 let gAnimView=null;
 function animateView(ts,txT,tyT){
@@ -1418,9 +1423,8 @@ function animateView(ts,txT,tyT){
 }
 function applyFocus(){
   const G=GRAPH,cv=$('graphCanvas');if(!G||!cv)return;
-  // 栈顶节点若已不在图中(数据变了),逐级回退
-  while(focusStack.length&&!(focusStack[focusStack.length-1]in G.idx))focusStack.pop();
-  const cur=focusStack[focusStack.length-1]||null;
+  if(focusId&&!(focusId in G.idx))focusId=null;   // 节点已不在图中(数据变了)则退出聚焦
+  const cur=focusId;
   if(!cur){G.dimSet=null;fitGraph();drawGraph();return;}
   const set=gDescIds(cur);
   G.dimSet=set;
@@ -1432,10 +1436,12 @@ function applyFocus(){
   const s=Math.max(0.35,Math.min(2.4,Math.min((W-pad*2)/Math.max(80,x1-x0),(H-pad*2)/Math.max(80,y1-y0))));
   animateView(s,W/2-(x0+x1)/2*s,H/2-(y0+y1)/2*s);
 }
-function focusNode(nid){focusStack.push(nid);applyFocus();}
+function focusNode(nid){focusId=nid;applyFocus();}
 function popFocus(){
-  if(focusStack.length){focusStack.pop();applyFocus();}
-  else{const G=GRAPH;if(G){G.dimSet=null;fitGraph();drawGraph();}}
+  if(!focusId){const G=GRAPH;if(G){G.dimSet=null;fitGraph();drawGraph();}return;}
+  const p=gParentOf(focusId);
+  if(!p||p==='@c'){focusId=null;applyFocus();}   // 上一级是中心 → 回全景
+  else{focusId=p;applyFocus();}
 }
 
 /* 实时模拟:gKick 注入能量,30fps 循环逐帧衰减,静止即停(不烧 CPU;不用 rAF——后台/嵌入渲染器会冻结它) */
@@ -1516,7 +1522,7 @@ function buildGraph(force){
   GRAPH={nodes,edges,idx:Object.fromEntries(nodes.map((n,i)=>[n.id,i])),
     scale:GRAPH?GRAPH.scale:1,tx:GRAPH?GRAPH.tx:0,ty:GRAPH?GRAPH.ty:0,fitted:GRAPH?GRAPH.fitted:false};
   if(!GRAPH.fitted){fitGraph();GRAPH.fitted=true;}
-  if(focusStack.length)applyFocus();   // 数据刷新后恢复聚焦态
+  if(focusId)applyFocus();   // 数据刷新后恢复聚焦态
   else drawGraph();
   gKick(warm?0.5:1);
   $('graphCnt').textContent=` ${nodes.filter(n=>n.type==='task').length} 任务 · ${goals.length} 目标`;
@@ -1655,7 +1661,7 @@ function graphJump(n){
           lastClick={id:n.id,ts:now};
           clearTimeout(clickTimer);
           clickTimer=setTimeout(()=>{   // 延迟执行,给双击留取消窗口
-            if(n.type==='center'){focusStack.length=0;applyFocus();}
+            if(n.type==='center'){focusId=null;applyFocus();}
             else focusNode(n.id);
           },260);
         }
@@ -1669,9 +1675,9 @@ function graphJump(n){
     const ns=Math.max(0.25,Math.min(4,G.scale*f));
     G.tx=mx-(mx-G.tx)*(ns/G.scale);G.ty=my-(my-G.ty)*(ns/G.scale);G.scale=ns;drawGraph();},{passive:false});
   $('gfDone').addEventListener('change',()=>{if(DATA)buildGraph(true);});
-  $('gfScale').addEventListener('change',()=>{if(DATA){focusStack.length=0;GRAPH=null;buildGraph(true);}});
-  $('gfGoal').addEventListener('change',()=>{if(DATA){focusStack.length=0;GRAPH=null;buildGraph(true);}});
-  $('gfReset').addEventListener('click',()=>{if(!GRAPH)return;GRAPH.nodes.forEach(n=>{if(n.type!=='center')n.pin=false;});focusStack.length=0;GRAPH=null;$('gfGoal').value='';$('gfScale').value='';buildGraph(true);});
+  $('gfScale').addEventListener('change',()=>{if(DATA){focusId=null;GRAPH=null;buildGraph(true);}});
+  $('gfGoal').addEventListener('change',()=>{if(DATA){focusId=null;GRAPH=null;buildGraph(true);}});
+  $('gfReset').addEventListener('click',()=>{if(!GRAPH)return;GRAPH.nodes.forEach(n=>{if(n.type!=='center')n.pin=false;});focusId=null;GRAPH=null;$('gfGoal').value='';$('gfScale').value='';buildGraph(true);});
 })();
 
 /* ================= 登录与启动 ================= */
