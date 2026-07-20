@@ -128,6 +128,8 @@
   .mrow .ops{display:flex;gap:5px;flex:none;opacity:.6;transition:opacity .12s}
   .mrow:hover .ops{opacity:1}
   .mrow.schedrow{background:#f5f1ea}
+  .mrow.rowover-b{box-shadow:inset 0 3px 0 var(--green);background:#eef7f0!important}
+  .mrow.rowover-a{box-shadow:inset 0 -3px 0 var(--green);background:#eef7f0!important}
   /* 标签选择浮层 */
   #tagMenu{position:fixed;display:none;z-index:70;background:#fff;border:1px solid var(--border);border-radius:10px;
     box-shadow:0 8px 26px rgba(0,0,0,.15);padding:6px;min-width:118px}
@@ -790,28 +792,34 @@ function bindPoolCardOps(root){
   }
 }
 function renderPlanPool(){
-  const s0=viewMonth+'-01',e0=viewMonth+'-'+pad2(daysInMonth(viewMonth));
-  const list=DATA.tasks.filter(t=>t.status==='planned'&&
-    (t.month===viewMonth||(t.start_date&&t.end_date&&t.start_date<=e0&&t.end_date>=s0)))
-    .sort((a,c)=>((a.sort??1e12)-(c.sort??1e12))||(prRank(a)-prRank(c))||(a.id-c.id));   // 与甘特同序
-  const sched=list.filter(t=>t.start_date).length;
+  /* 聚簇到最高相关节点:每棵相关树只显示最高的未完成节点(planned/pool/goal 均可,标状态徽章),父永远优先于子 */
+  const alive=t=>t&&t.status!=='done'&&t.status!=='archived';
+  const list=DATA.tasks.filter(t=>{
+    if(!alive(t)||!monthRelevant(t))return false;
+    const p=t.parent_id?MAP.get(t.parent_id):null;
+    return!(alive(p)&&monthRelevant(p));
+  }).sort((a,c)=>((a.sort??1e12)-(c.sort??1e12))||(prRank(a)-prRank(c))||(a.id-c.id));   // 与甘特同序
+  const sched=list.filter(t=>effRange(t)).length;
   $('planCnt').textContent=`${list.length} 项 · ${sched} 已排甘特`;
   $('planList').innerHTML=list.map(t=>{
     const cr=crumbs(t);const open=expanded.has(t.id);
-    let h=`<div class="mrow${t.start_date?' schedrow':''}" data-tid="${t.id}" data-prow="${t.id}" draggable="true" style="cursor:pointer" title="点击展开/收起 · 拖到甘特排期 · 上下拖到别的行=排序">
+    const er=t.start_date?{s:t.start_date,e:t.end_date,env:false}:effRange(t);
+    let h=`<div class="mrow${er?' schedrow':''}" data-tid="${t.id}" data-prow="${t.id}" draggable="true" style="cursor:pointer" title="点击展开/收起 · 拖到甘特排期 · 上下拖到别的行=排序">
       <span class="mg-caret${open?' open':''}">▸</span>
       ${cbHtml(t,'tcb')}${nmBadge(t)}
       <span class="name pname">${esc(t.name)}</span>
+      ${t.status==='goal'?'<span class="badge Px" title="在目标区,还未放行进池">目标区</span>':t.status==='pool'?'<span class="badge" style="background:#e3edf9;color:#2f6bb3" title="在任务池,还未排入本月">在池</span>':''}
       ${cr?`<span class="crumb" title="${esc(cr)}">${esc(cr)}</span>`:''}
       ${t.parent_id?tagBadge(t):tagBadge(t,`data-ptag="${t.id}"`)}
       <span class="badge ${prClass(t.priority)}" data-pr="${t.id}" title="点击切换优先级">${t.priority||'–'}</span>
-      ${t.start_date?`<span class="datechip" style="font-weight:600;color:var(--text2)" title="已排进甘特(${t.start_date}→${t.end_date}),在甘特图中拖拽调整">📅 ${fmtMD(t.start_date)}→${fmtMD(t.end_date)}</span>`:''}
+      ${er?`<span class="datechip" style="font-weight:600;color:var(--text2)" title="${er.env?'子任务日期包络('+er.s+'→'+er.e+'),点行展开管理':'已排进甘特('+er.s+'→'+er.e+'),在甘特图中拖拽调整'}">📅 ${fmtMD(er.s)}→${fmtMD(er.e)}${er.env?' <span style="font-weight:400;color:var(--text3)">·子</span>':''}</span>`:''}
       <span class="ops">
         <span class="ab ed" data-ed2="${t.id}" title="编辑(名称/标签/优先级)">✎</span>
         ${t.start_date?'':`<span class="ab in" data-sch="${t.id}" title="排期(默认3天,甘特可拖)">⏱</span>`}
         <span class="ab in" data-rp="${t.id}" title="挂到其他任务下 / 设为顶层">⇄</span>
         ${t.parent_id?`<span class="ab in" data-out="${t.id}" title="独立出去(脱离父任务成顶层)">⇱</span>`
-                     :`<span class="ab rs" data-back="${t.id}" title="退回任务池(清空月份与排期)">↩</span>`}
+          :(t.status==='planned'?`<span class="ab rs" data-back="${t.id}" title="退回任务池(清空月份与排期)">↩</span>`
+            :`<span class="chipbtn" data-pin2="${t.id}" title="正式排入本月规划">→ 月</span>`)}
         <span class="ab rm" data-parc="${t.id}" title="归档删除(整棵子树)">×</span>
       </span></div>`;
     if(open){h+=kidsOf(t.id).map(k=>treeRow(k,1)).join('');h+=treeAddRow(t,1);}
@@ -830,6 +838,8 @@ function renderPlanPool(){
     patchTask(t.id,{start_date:base,end_date:addDays(base,2)},'已排期,去甘特图拖拽调整 ✓');}));
   root.querySelectorAll('[data-ptag]').forEach(b=>b.addEventListener('click',()=>{
     openTagMenu(MAP.get(+b.dataset.ptag),b);}));
+  root.querySelectorAll('[data-pin2]').forEach(b=>b.addEventListener('click',()=>{
+    patchTask(+b.dataset.pin2,{month:viewMonth,status:'planned'},`已正式排入 ${viewMonth} ✓`);}));
   root.querySelectorAll('[data-rp]').forEach(b=>b.addEventListener('click',()=>openReparent(MAP.get(+b.dataset.rp))));
   root.querySelectorAll('[data-out]').forEach(b=>b.addEventListener('click',()=>{
     const t=MAP.get(+b.dataset.out);
