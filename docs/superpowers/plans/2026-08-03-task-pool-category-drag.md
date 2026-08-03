@@ -103,7 +103,7 @@ Expected: `44 通过, 0 失败`。
 - Consumes: `TiangangTagOrder.reorderTags()`、现有 `TAGS`、`dragged`、`mutate()`、`POST /api/tags`。
 - Produces: `.pool-group[data-taggroup]`、`.pl-lab[data-tagdrag]` 和 `dragged.kind='tagorder'`。
 
-- [ ] **Step 1: 建立失败的浏览器验收**
+- [x] **Step 1: 建立失败的浏览器验收**
 
 在隔离临时库启动 8898 服务并创建“工作/学习/投资/副业”分类与示例任务。打开月度页后检查：
 
@@ -117,7 +117,7 @@ return {
 
 Expected before implementation: `groupCount === 0`、`draggableLabels === 0`，验收失败。
 
-- [ ] **Step 2: 包装完整分类块并添加视觉状态**
+- [x] **Step 2: 包装完整分类块并添加视觉状态**
 
 `renderPool()` 每个标签返回：
 
@@ -134,7 +134,7 @@ Expected before implementation: `groupCount === 0`、`draggableLabels === 0`，�
 
 `其他` 的 `.pl-lab` 使用 `draggable="false"`。增加 `.pool-group.tagorder-dragging`、`.tagorder-before`、`.tagorder-after` 样式，分别表达整组半透明和上下插入线；`.pl-lab[data-tagdrag]` 使用 `cursor:grab`，不显示新图标。
 
-- [ ] **Step 3: 实现相互隔离的拖放事件**
+- [x] **Step 3: 实现相互隔离的拖放事件**
 
 在 `bindPoolCardOps(root)` 中：
 
@@ -169,7 +169,7 @@ if (next.join('\0') !== TAGS.join('\0')) {
 
 原 `[data-pdrag]` 与 `[data-tagdrop]` 事件仅识别 `pooltag`，无需改变业务逻辑。
 
-- [ ] **Step 4: 浏览器验证 GREEN**
+- [x] **Step 4: 浏览器验证 GREEN**
 
 在临时 8898 页面依次验证：
 
@@ -191,7 +191,7 @@ if (next.join('\0') !== TAGS.join('\0')) {
 - Consumes: 已验证的分类排序行为。
 - Produces: 后续 Agent 可维护的交互契约和用户说明。
 
-- [ ] **Step 1: 同步文档**
+- [x] **Step 1: 同步文档**
 
 明确记录：分类左侧区域直接拖动、整组换位、顺序存入 tags 数组、“其他”固定最后、任务卡拖分类与分类排序使用不同 `dragged.kind`。
 

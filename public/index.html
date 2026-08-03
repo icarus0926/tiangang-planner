@@ -91,8 +91,16 @@
   .badge{font-size:11px;padding:0 7px;border-radius:10px;flex:none;font-weight:600;cursor:pointer;user-select:none}
   .P0{background:#fbe9e7;color:#c04531}.P1{background:#fdf1e3;color:#b2701f}.P2{background:#f1f0ee;color:#8a847d}.Px{background:#f1f0ee;color:#b5aea6}
   .poollayers{display:flex;flex-direction:column;gap:12px}
+  .pool-group{position:relative;border-radius:12px;transition:opacity .15s ease,background .15s ease}
   .pool-layer{display:flex;align-items:flex-start;gap:10px}
   .pl-lab{flex:none;width:30px;font-size:12px;font-weight:600;color:var(--text3);padding-top:7px}
+  .pl-lab[data-tagdrag]{cursor:grab;user-select:none}
+  .pl-lab[data-tagdrag]:active{cursor:grabbing}
+  .pool-group.tagorder-dragging{opacity:.38}
+  .pool-group.tagorder-before,.pool-group.tagorder-after{background:#f6faf7}
+  .pool-group.tagorder-before::before,.pool-group.tagorder-after::after{content:"";position:absolute;left:0;right:0;height:3px;border-radius:3px;background:var(--green);z-index:2;pointer-events:none}
+  .pool-group.tagorder-before::before{top:-7px}
+  .pool-group.tagorder-after::after{bottom:-7px}
   .pl-cards{flex:1;display:flex;flex-wrap:wrap;gap:8px;min-width:0}
   .pcard{display:inline-flex;align-items:center;gap:5px;padding:6px 8px 6px 10px;border:1px solid var(--border);border-radius:20px;
     background:#fff;font-size:12.5px;max-width:380px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
@@ -702,12 +710,15 @@ function renderPool(){
       `<div class="card" style="margin:2px 0 8px 46px;padding:4px 14px 8px">
         <div style="font-size:11.5px;color:var(--text3);padding:6px 0 2px">「${esc(t.name)}」的子任务</div>
         ${kidsOf(t.id).map(k=>treeRow(k,0)).join('')||''}${treeAddRow(t,0)}</div>`).join('');
-    return `<div class="pool-layer">
-      <div class="pl-lab" style="color:${h};width:auto;min-width:36px;display:flex;align-items:center;gap:3px"><span class="pl-name" data-tagname="${esc(tag)}">${esc(tag)}</span><span class="ab in" data-tadd2="${esc(tag)}" title="在「${esc(tag)}」下添加任务" style="opacity:.55">＋</span>${tag!=='其他'?`<span class="ab ed" data-tagren="${esc(tag)}" title="重命名分类" style="opacity:.4;font-size:11px">✎</span><span class="ab rm" data-tagdel="${esc(tag)}" title="删除分类(任务归入「其他」)" style="opacity:.4">×</span>`:''}</div>
-      <div class="pl-cards" data-tagdrop="${esc(tag)}">${cards||`<span style="font-size:12px;color:var(--text3);padding:7px 0">空 · 拖任务到此归类</span>`}</div>
-    </div>
-    ${panels}
-    <div class="subinp" data-pooladd="${esc(tag)}" style="display:none;margin:2px 0 8px 46px"><input placeholder="在「${esc(tag)}」下添加任务,回车确认…"><button>添加</button></div>`;
+    const canDrag=tag!=='其他';
+    return `<div class="pool-group" data-taggroup="${esc(tag)}">
+      <div class="pool-layer">
+        <div class="pl-lab"${canDrag?` data-tagdrag="${esc(tag)}" draggable="true" title="按住分类名称拖动整组排序"`:''} style="color:${h};width:auto;min-width:36px;display:flex;align-items:center;gap:3px"><span class="pl-name" data-tagname="${esc(tag)}">${esc(tag)}</span><span class="ab in" data-tadd2="${esc(tag)}" title="在「${esc(tag)}」下添加任务" style="opacity:.55">＋</span>${tag!=='其他'?`<span class="ab ed" data-tagren="${esc(tag)}" title="重命名分类" style="opacity:.4;font-size:11px">✎</span><span class="ab rm" data-tagdel="${esc(tag)}" title="删除分类(任务归入「其他」)" style="opacity:.4">×</span>`:''}</div>
+        <div class="pl-cards" data-tagdrop="${esc(tag)}">${cards||`<span style="font-size:12px;color:var(--text3);padding:7px 0">空 · 拖任务到此归类</span>`}</div>
+      </div>
+      ${panels}
+      <div class="subinp" data-pooladd="${esc(tag)}" style="display:none;margin:2px 0 8px 46px"><input placeholder="在「${esc(tag)}」下添加任务,回车确认…"><button>添加</button></div>
+    </div>`;
   }).join('')+
   `<div style="margin-top:8px;display:flex;gap:10px;align-items:center">
      <button class="ghostbtn" id="newTagBtn">＋ 新建分类</button>
@@ -755,6 +766,44 @@ function bindPoolCardOps(root){
       const t=MAP.get(dragged.id),tag=zone.dataset.tagdrop;
       if(!t||tagOf(t)===tag)return;
       patchTask(t.id,{kind:tag},`已移入「${tag}」`);});});
+  /* 按住分类名称拖动整组排序；分类内按钮仍只响应点击 */
+  const clearTagOrderState=()=>root.querySelectorAll('.tagorder-dragging,.tagorder-before,.tagorder-after').forEach(el=>{
+    el.classList.remove('tagorder-dragging','tagorder-before','tagorder-after');});
+  root.querySelectorAll('[data-tagdrag]').forEach(label=>{
+    label.addEventListener('pointerdown',e=>{label._skipTagDrag=!!e.target.closest('.ab,button,input');});
+    label.addEventListener('dragstart',e=>{
+      const tag=label.dataset.tagdrag;
+      if(label._skipTagDrag||!tag||tag==='其他'){e.preventDefault();label._skipTagDrag=false;return;}
+      const group=label.closest('[data-taggroup]');
+      dragged={kind:'tagorder',tag};group.classList.add('tagorder-dragging');
+      if(e.dataTransfer){e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',tag);
+        try{e.dataTransfer.setDragImage(group,18,18);}catch(_){}}
+    });
+    label.addEventListener('dragend',()=>{label._skipTagDrag=false;dragged=null;clearTagOrderState();});
+  });
+  root.querySelectorAll('[data-taggroup]').forEach(group=>{
+    group.addEventListener('dragover',e=>{
+      if(!dragged||dragged.kind!=='tagorder')return;
+      e.preventDefault();
+      const r=group.getBoundingClientRect(),before=e.clientY<r.top+r.height/2;
+      group.classList.toggle('tagorder-before',before);group.classList.toggle('tagorder-after',!before);
+      if(e.dataTransfer)e.dataTransfer.dropEffect='move';
+    });
+    group.addEventListener('dragleave',e=>{
+      if(e.relatedTarget&&group.contains(e.relatedTarget))return;
+      group.classList.remove('tagorder-before','tagorder-after');
+    });
+    group.addEventListener('drop',e=>{
+      if(!dragged||dragged.kind!=='tagorder')return;
+      e.preventDefault();
+      const source=dragged.tag,target=group.dataset.taggroup;
+      const r=group.getBoundingClientRect(),before=e.clientY<r.top+r.height/2;
+      clearTagOrderState();dragged=null;
+      const next=TiangangTagOrder.reorderTags(TAGS,source,target,before);
+      if(next.join('\u0000')===TAGS.join('\u0000'))return;
+      mutate(()=>api('POST','/api/tags',{tags:next.filter(x=>x!=='其他')}),'分类顺序已保存 ✓');
+    });
+  });
   /* 分类删除(任务归入「其他」)与重命名 */
   root.querySelectorAll('[data-tagdel]').forEach(b=>b.addEventListener('click',()=>{
     const tag=b.dataset.tagdel;

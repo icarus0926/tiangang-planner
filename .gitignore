@@ -4,4 +4,5 @@ data/
 backups/
 migrate/snapshot.json
 *.log
+.playwright-cli/
 .worktrees/
