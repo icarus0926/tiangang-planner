@@ -211,7 +211,7 @@ Expected: `44 通过, 0 失败`，语法与差异检查通过；敏感信息扫�
 
 只停止已确认命令行为 `node server.js` 的 8790 PID，再从项目目录隐藏启动新进程。检查 `GET http://127.0.0.1:8790/` 返回 200。
 
-- [ ] **Step 4: 提交并推送**
+- [x] **Step 4: 提交并推送**
 
 ```powershell
 git add public/tag-order.js public/index.html test.mjs README.md docs/agent docs/superpowers
