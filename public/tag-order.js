@@ -1,7 +1,7 @@
 (function (root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
-  else root.TiangangTagOrder = api;
+  if (root) root.TiangangTagOrder = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   function reorderTags(tags, source, target, before) {
     const other = '其他';
