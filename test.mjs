@@ -10,6 +10,8 @@ process.env.PORT = '8899';
 
 const { createRequire } = await import('node:module');
 const require = createRequire(import.meta.url);
+let reorderTags;
+try { ({ reorderTags } = require('./public/tag-order.js')); } catch (_) { }
 const { app } = require('./server.js');
 const srv = app.listen(8899);
 
@@ -20,6 +22,17 @@ const api = async (method, p, body) => {
 };
 let pass = 0, fail = 0;
 const ok = (c, m) => c ? (pass++, console.log('  ✓', m)) : (fail++, console.log('  ✗', m));
+
+// ── 任务池分类整块排序(纯函数,浏览器与测试共用)
+ok(typeof reorderTags === 'function' &&
+  JSON.stringify(reorderTags(['工作', '学习', '投资', '副业', '其他'], '投资', '工作', true)) ===
+  JSON.stringify(['投资', '工作', '学习', '副业', '其他']), '分类排序:整块移到目标前');
+ok(typeof reorderTags === 'function' &&
+  JSON.stringify(reorderTags(['工作', '学习', '投资', '副业', '其他'], '工作', '其他', false)) ===
+  JSON.stringify(['学习', '投资', '副业', '工作', '其他']), '分类排序:拖到其他后仍停在其他前');
+ok(typeof reorderTags === 'function' &&
+  JSON.stringify(reorderTags(['工作', '学习', '其他'], '其他', '工作', true)) ===
+  JSON.stringify(['工作', '学习', '其他']), '分类排序:其他固定最后');
 
 // ── 认证
 ok((await fetch('http://localhost:8899/api/data')).status === 401, '无口令 401');

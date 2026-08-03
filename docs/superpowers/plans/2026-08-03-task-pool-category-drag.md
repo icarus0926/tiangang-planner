@@ -29,7 +29,7 @@
 - Consumes: `tags: string[]`，`source: string`，`target: string`，`before: boolean`。
 - Produces: `TiangangTagOrder.reorderTags(tags, source, target, before): string[]`；Node 中通过 `module.exports` 暴露同一函数。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `test.mjs` 的 `createRequire` 后加载尚不存在的 helper，捕获缺失并用现有 `ok()` 记录失败：
 
@@ -52,13 +52,13 @@ ok(typeof reorderTags === 'function' &&
   JSON.stringify(['工作','学习','其他']), '分类排序:其他固定最后');
 ```
 
-- [ ] **Step 2: 运行测试并确认 RED**
+- [x] **Step 2: 运行测试并确认 RED**
 
 Run: `npm test`
 
 Expected: 现有 41 项通过，新加的 3 条“分类排序”失败，原因是 `reorderTags` 不存在。
 
-- [ ] **Step 3: 写最小纯函数**
+- [x] **Step 3: 写最小纯函数**
 
 创建 `public/tag-order.js`：
 
@@ -88,7 +88,7 @@ Expected: 现有 41 项通过，新加的 3 条“分类排序”失败，原因
 <script src="/tag-order.js"></script>
 ```
 
-- [ ] **Step 4: 运行测试并确认 GREEN**
+- [x] **Step 4: 运行测试并确认 GREEN**
 
 Run: `npm test`
 
