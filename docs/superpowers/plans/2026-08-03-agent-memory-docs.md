@@ -92,4 +92,4 @@
 - [x] **Step 2:** 运行 Markdown 相对链接存在性检查，期望 0 个缺失目标。
 - [x] **Step 3:** 对照 `server.js` 路由和 `db.js` 状态/表名做关键覆盖检查。
 - [x] **Step 4:** 运行 `git diff --check` 和敏感信息扫描。
-- [ ] **Step 5:** 检查 `git diff --stat` 与文档内容，提交并推送 `main`。
+- [x] **Step 5:** 检查 `git diff --stat` 与文档内容，提交并推送 `main`。
