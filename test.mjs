@@ -87,12 +87,17 @@ ok(find(E.id).parent_id === null, 'E 独立为顶层');
 // ── PATCH 禁止直接 status=done
 ok((await api('PATCH', `/api/task/${E.id}`, { status: 'done' })).status === 400, 'PATCH 拒绝 status=done');
 
-// ── 顺延(月):建 2 个未完成 + 复用已完成 A(不该动)
+// ── 顺延(月):显式月份 + 仅靠日期进入本月的部分完成任务都要顺延;已完成 A 不动
 const F = (await api('POST', '/api/task', { name: 'F', month: '2026-07' })).body.task;
 const G = (await api('POST', '/api/task', { name: 'G', month: '2026-07' })).body.task;
+const dateParent = (await api('POST', '/api/task', { name: '日期型父任务', start: '2026-07-21', end: '2026-07-23' })).body.task;
+const dateDoneChild = (await api('POST', '/api/task', { name: '已完成小任务', parent_id: dateParent.id })).body.task;
+await api('POST', `/api/task/${dateDoneChild.id}/toggle-done`);
+await api('POST', '/api/task', { name: '未完成小任务', parent_id: dateParent.id });
 const roll = (await api('POST', '/api/rollover', { scope: 'month', from: '2026-07', to: '2026-08' })).body;
 data = (await api('GET', '/api/data')).body;
-ok(roll.count === 2 && find(F.id).month === '2026-08' && find(A.id).month === '2026-07', '月顺延只动未完成(2条),完成的 A 留在7月');
+ok(find(F.id).month === '2026-08' && find(G.id).month === '2026-08' && find(A.id).month === '2026-07', '月顺延移动显式归属本月的未完成任务,完成的 A 留在7月');
+ok(roll.count === 3 && find(dateParent.id).month === '2026-08' && find(dateParent.id).status === 'planned', '月顺延包含仅靠日期进入本月且部分完成的任务簇');
 
 // ── 每日执行
 const ex1 = (await api('POST', '/api/execution', { text: '自由待办', date: '2026-07-15' })).body.execution;

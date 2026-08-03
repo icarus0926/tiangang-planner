@@ -11,7 +11,7 @@
 
 - **任务即树**:任何任务都可以无限拆子任务;子任务与任务同权(一样可以排期、拖拽、再拆分)
 - **根可生于任意尺度**:年度目标下挂任务、任务池丢裸想法、月度直建、周内直排、今日琐事一键**升格 ↗**为正式任务
-- **完成自动冒泡**:叶子任务手动勾选;父任务在全部子任务完成时自动完成,重开任一子任务父级自动重开(双向、可逆)
+- **整树完成 + 自动冒泡**:所有任务都能勾选;勾父任务会把整棵子树一起完成,取消则整树重开;单个子任务变化也会向父级自动冒泡(双向、可逆)
 - **字段点亮可见性**:挂目标→年度页可见;填月份→进月度规划池;填起止日期→上甘特图;拉入某天→当日待办。同一条数据,四个时间尺度各取所需
 - **挂靠 ⇄ 与独立 ⇱**:任务可随时挂到别的任务下面/独立成顶层,挂靠只改层级不动排期,且有成环防护
 - **顺延不污染历史**:月度/每日一键顺延未完成项;`month` 记计划归属、`done_at` 记完成历史,统计不受顺延影响
@@ -31,7 +31,7 @@
 
 - **月度甘特**:树形时间线,▸ 逐层下钻。实线条=已排期(拖动改期、两端手柄改时长,**父条拖动=整棵子树平移**);虚线幽灵条=未排期子任务(点击按父范围落定);虚线信封条=没排期但子孙有日期的父任务(自动包络)。左侧标签上下拖动排同层顺序(排序≠挂靠,跨层拖动会被拦下),× 一键退回规划池
 - **本月规划池**:本月要做的事,含单独排进本月的子任务(带面包屑徽章);✎ 就地改名、优先级点击轮换、⏱ 一键排期、＋子任务、⇄ 挂到、未完成顺延下月
-- **任务池**:还没分配的裸想法,按 P0/P1/P2 分层;「→月」排入当月
+- **任务池**:按学习、工作、投资、副业等可编辑标签分组;深色卡片表示已分配,任务可跨分类拖动改标签,也能展开维护子任务
 - **已完成**:整树完成的任务归档区,↩ 一键恢复(整棵重开)
 
 ![大纲视图](docs/screenshots/v2-outline.png)
@@ -55,7 +55,7 @@
 
 ![年度目标](docs/screenshots/v2-year.png)
 
-目标卡增删改、手填进度条、挂载任务数与叶子完成比;「＋任务」直接在目标下生根(先进池,后续再排期)。
+目标卡增删改、手填进度条、挂载任务数与叶子完成比;「＋任务」直接在目标下生根并留在目标区,点击「→池」后才进入任务池等待排期。年度完成记录按 `done_at` 月份分组。
 
 ## 快速部署
 
@@ -81,7 +81,7 @@ install: npm install
 config: copy .env.example to .env; set DASH_PASSWORD (any string), PORT (default 8790)
 run: npm start          # or: node server.js
 verify: GET /api/data with header "x-dash-key: <DASH_PASSWORD>" returns {goals,tasks,executions}
-test: npm test          # 33 integration tests, in-memory temp DB, no side effects
+test: npm test          # 41 integration checks, temporary SQLite database
 data: single file data/tiangang.db (auto-created; WAL mode; auto-backup to backups/)
 ```
 
@@ -91,13 +91,14 @@ data: single file data/tiangang.db (auto-created; WAL mode; auto-backup to backu
 tiangang/
 ├── server.js            Express REST API·完成冒泡·挂靠成环防护·顺延事务·审计·自动备份
 ├── db.js                node:sqlite 封装(WAL/外键/幂等建表/事务/滚动备份)
-├── public/index.html    单文件前端(四页+甘特/大纲/力导向图,零框架零构建)
+├── public/index.html    单文件前端(五页+甘特/大纲/力导向图,零框架零构建)
 ├── migrate/             (可选)Notion 旧数据一次性迁移脚本
 ├── data/tiangang.db     数据(gitignore)
+├── docs/agent/          面向后续开发 Agent 的架构、领域、API、前端与工作流记忆
 └── backups/             自动备份(gitignore,保留30份)
 ```
 
-**数据模型**(4 张表):`goals` 年度目标 / `tasks` 递归任务树(`parent_id` 自引用,`status` pool→planned→done→archived) / `executions` 每日执行(自由文本 XOR 任务关联,`UNIQUE(task_id,date)`) / `audit` 全量写审计。
+**数据模型**(5 张表):`goals` 年度目标 / `tasks` 递归任务树(`parent_id` 自引用,状态含 goal/pool/planned/done/archived) / `executions` 每日执行(自由文本 XOR 任务关联,`UNIQUE(task_id,date)`) / `audit` 写操作审计 / `meta` 动态标签等轻量配置。
 
 **核心语义**:完成冒泡在服务端一处实现;进度=子树叶子完成比,接口计算返回;删除=整树软归档,硬删仅限已归档;挂靠(re-parent)带成环检测。
 
@@ -105,9 +106,12 @@ tiangang/
 
 ```
 GET    /api/data                     全量数据(任务附 leaves/done_leaves 进度)
+POST   /api/goal                     新建年度目标
+PATCH  /api/goal/:id                 编辑年度目标
+DELETE /api/goal/:id                 删除目标(任务保留并脱钩)
 POST   /api/task                     建任务(生根尺度由出生字段决定)
 PATCH  /api/task/:id                 改任意字段(parent_id=挂靠/独立,自动重估新旧父链)
-POST   /api/task/:id/toggle-done     叶子勾选(服务端向上冒泡)
+POST   /api/task/:id/toggle-done     任意节点勾选(整树级联+向上冒泡)
 DELETE /api/task/:id                 软归档整树;?hard=1 硬删(仅已归档)
 POST   /api/task/:id/restore         恢复(整树重开)
 POST   /api/rollover                 {scope:'month'|'day',from,to} 事务顺延未完成
@@ -115,9 +119,14 @@ POST   /api/execution                当日待办({task_id}|{text})
 PATCH  /api/execution/:id            勾选(叶子任务联动完成)
 POST   /api/execution/:id/promote    自由文本升格为任务
 DELETE /api/execution/:id
+POST   /api/tags                     保存动态任务分类列表
 ```
 
-所有 `/api/*` 需请求头 `x-dash-key: <DASH_PASSWORD>`。
+配置了 `DASH_PASSWORD` 时,所有 `/api/*` 需请求头 `x-dash-key: <DASH_PASSWORD>`。
+
+## 给后续开发 Agent
+
+从 [`AGENTS.md`](AGENTS.md) 开始，按任务渐进读取 [`docs/agent/`](docs/agent/README.md)。其中记录了当前源码架构、任务树不变量、完整 API、复杂前端交互、测试/迁移流程和已知技术债；修改行为时请在同一提交同步相应文档。
 
 ## 从 Notion 迁移(可选)
 

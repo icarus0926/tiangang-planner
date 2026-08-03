@@ -12,7 +12,7 @@ const { open, tx, backup } = require('./db.js');
 const app = express();
 app.use(express.json());
 const KEY = process.env.DASH_PASSWORD || '';
-const PORT = process.env.PORT || 8787;
+const PORT = process.env.PORT || 8790;
 const db = open();
 
 // 备份:启动时 + 每 24h
@@ -240,10 +240,31 @@ app.post('/api/rollover', (req, res) => {
     let n = 0;
     tx(db, () => {
       if (scope === 'month') {
-        const rows = db.prepare(`SELECT id FROM tasks WHERE month=? AND status='planned'`).all(from);
-        db.prepare(`UPDATE tasks SET month=? WHERE month=? AND status='planned'`).run(to, from);
-        n = rows.length;
-        audit('task', null, 'rollover-month', { from, to }, { count: n });
+        // 与月度规划池的“本月相关”保持一致:显式 month 或日期落在本月,
+        // 并沿父链聚成最高未完成任务簇。只改计划归属,保留原排期与完成历史。
+        const monthEnd = db.prepare(`SELECT date(? || '-01','+1 month','-1 day') d`).get(from).d;
+        const rows = db.prepare(`SELECT id,parent_id,status,month,start_date,end_date FROM tasks WHERE status!='archived'`).all();
+        const byId = new Map(rows.map(t => [t.id, t]));
+        const kids = new Map();
+        rows.forEach(t => { if (t.parent_id != null) (kids.get(t.parent_id) || kids.set(t.parent_id, []).get(t.parent_id)).push(t); });
+        const memo = new Map();
+        const relevant = t => {
+          if (memo.has(t.id)) return memo.get(t.id);
+          const own = t.status === 'planned' && (t.month === from ||
+            (t.month == null && t.start_date && t.end_date && t.start_date <= monthEnd && t.end_date >= `${from}-01`));
+          const yes = own || (kids.get(t.id) || []).some(relevant);
+          memo.set(t.id, yes); return yes;
+        };
+        const roots = rows.filter(t => t.status !== 'done' && relevant(t))
+          .filter(t => { const p = t.parent_id == null ? null : byId.get(t.parent_id); return !p || p.status === 'done' || !relevant(p); })
+          .filter(t => t.status === 'planned' && (t.month == null || t.month === from));
+        for (const root of roots) {
+          const ids = descendantIds(root.id);
+          db.prepare(`UPDATE tasks SET month=? WHERE id IN (${ids.map(() => '?').join(',')}) AND status='planned' AND (id=? OR month=?)`)
+            .run(to, ...ids, root.id, from);
+        }
+        n = roots.length;
+        audit('task', null, 'rollover-month', { from, to }, { count: n, roots: roots.map(t => t.id) });
       } else if (scope === 'day') {
         const rows = db.prepare(`SELECT id FROM executions WHERE date=? AND done=0`).all(from);
         db.prepare(`UPDATE executions SET date=? WHERE date=? AND done=0`).run(to, from);
