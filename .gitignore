@@ -4,3 +4,4 @@ data/
 backups/
 migrate/snapshot.json
 *.log
+.worktrees/
