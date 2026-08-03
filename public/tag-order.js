@@ -2,7 +2,7 @@
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
   if (root) root.TiangangTagOrder = api;
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+})(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this), function () {
   function reorderTags(tags, source, target, before) {
     const other = '其他';
     const list = [...new Set((tags || []).filter(Boolean))];
