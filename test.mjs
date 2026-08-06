@@ -84,6 +84,24 @@ const crossingParent = [
 const crossingPicked = rollHelp.selectPastRoots?.(crossingParent,'month','2026-08') || [];
 ok(crossingPicked.length === 1 && crossingPicked[0].root.id === 10 &&
   crossingPicked[0].nodes.map(x=>x.id).join(',') === '10', '跨入目标月的父节点不移动，过期子分支独立选择');
+const monthDatePriority = [
+  {id:11,parent_id:null,status:'planned',month:'2026-01',start_date:'2026-02-01',end_date:'2026-02-02'},
+  {id:12,parent_id:null,status:'planned',month:'2026-01',start_date:'2026-03-10',end_date:'2026-03-12'},
+  {id:13,parent_id:null,status:'planned',month:'2026-01',start_date:'2026-02-01',end_date:null},
+  {id:14,parent_id:null,status:'planned',month:'2026-01',start_date:'2026-03-10',end_date:null},
+  {id:15,parent_id:null,status:'planned',month:'2026-01',start_date:null,end_date:'2026-02-01'},
+  {id:16,parent_id:null,status:'planned',month:'2026-01',start_date:null,end_date:'2026-03-12'},
+  {id:17,parent_id:null,status:'planned',month:'2026-01',start_date:'2026-01-10',end_date:'2026-01-12'}
+];
+const monthDatePriorityPicked = rollHelp.selectPastRoots?.(monthDatePriority,'month','2026-02') || [];
+const monthDatePriorityNodes = new Set(monthDatePriorityPicked.flatMap(g => g.nodes.map(x => x.id)));
+ok(!monthDatePriorityNodes.has(11) && !monthDatePriorityNodes.has(12),
+  '旧 month 不覆盖当前或未来完整日期区间');
+ok(!monthDatePriorityNodes.has(13) && !monthDatePriorityNodes.has(14),
+  '旧 month 不覆盖当前或未来 start-only 日期');
+ok(!monthDatePriorityNodes.has(15) && !monthDatePriorityNodes.has(16),
+  '旧 month 不覆盖当前或未来 end-only 日期');
+ok(monthDatePriorityNodes.has(17), '旧 month 加真正旧日期仍可顺延');
 
 // ── 任务池分类整块排序(纯函数,浏览器与测试共用)
 ok(legacyMigrationPassed, 'legacy db migration adds rollover provenance columns');
@@ -490,6 +508,32 @@ const oldChildBranch = (await api('POST', '/api/task', {
   name: '父节点下旧子分支', parent_id: currentParent.id, month: '2026-01', start: '2026-01-18', end: '2026-01-19'
 })).body.task;
 
+const oldMonthCurrentRange = (await api('POST', '/api/task', {
+  name: '旧月当前完整区间', month: '2026-01', start: '2026-02-01', end: '2026-02-02'
+})).body.task;
+const oldMonthFutureRange = (await api('POST', '/api/task', {
+  name: '旧月未来完整区间', month: '2026-01', start: '2026-03-10', end: '2026-03-12'
+})).body.task;
+const oldMonthCurrentStartOnly = (await api('POST', '/api/task', {
+  name: '旧月当前仅开始日', month: '2026-01', start: '2026-02-01'
+})).body.task;
+const oldMonthFutureStartOnly = (await api('POST', '/api/task', {
+  name: '旧月未来仅开始日', month: '2026-01', start: '2026-03-10'
+})).body.task;
+const oldMonthCurrentEndOnly = (await api('POST', '/api/task', {
+  name: '旧月当前仅结束日', month: '2026-01', end: '2026-02-01'
+})).body.task;
+const oldMonthFutureEndOnly = (await api('POST', '/api/task', {
+  name: '旧月未来仅结束日', month: '2026-01', end: '2026-03-12'
+})).body.task;
+const protectedMonthRanges = [
+  oldMonthCurrentRange, oldMonthFutureRange,
+  oldMonthCurrentStartOnly, oldMonthFutureStartOnly,
+  oldMonthCurrentEndOnly, oldMonthFutureEndOnly
+];
+const protectedMonthBefore = new Map(protectedMonthRanges.map(t =>
+  [t.id, tdb.prepare('SELECT * FROM tasks WHERE id=?').get(t.id)]));
+
 const monthSentinel = (await api('POST', '/api/execution', {
   text: '月接口隔离未完成 sentinel', date: '2026-01-18'
 })).body.execution;
@@ -506,6 +550,8 @@ ok(pastMonth.status === 200 && pastMonth.body.count === 5 && pastMonth.body.merg
   pastMonth.body.roots?.length === expectedMonthRoots.length &&
   expectedMonthRoots.every(id => pastMonth.body.roots.includes(id)),
   '过往月任务簇返回实际移动节点数、簇根和统一 merged');
+ok(protectedMonthRanges.every(t => !pastMonth.body.roots?.includes(t.id)),
+  '旧 month 的当前未来完整/单边日期任务均不进入 API roots');
 ok(find(mRoot.id).start_date === '2026-02-28' && find(mRoot.id).end_date === '2026-02-28' &&
   find(mOpen.id).start_date === '2026-02-28' && find(mOpen.id).end_date === '2026-02-28',
   '月末锚点 1/31 夹到 2/28 且同簇使用同一 deltaDays');
@@ -536,6 +582,14 @@ ok(find(currentParent.id).month === '2026-02' && find(currentParent.id).start_da
   find(currentParent.id).rollover_origin_month == null &&
   find(oldChildBranch.id).start_date === '2026-02-18' && find(oldChildBranch.id).end_date === '2026-02-19',
   '当前月父节点不动且其旧子分支独立顺延');
+const taskRowUnchanged = id => JSON.stringify(tdb.prepare('SELECT * FROM tasks WHERE id=?').get(id)) ===
+  JSON.stringify(protectedMonthBefore.get(id));
+ok([oldMonthCurrentRange.id, oldMonthFutureRange.id].every(taskRowUnchanged),
+  'API 后旧 month 的当前未来完整区间全部字段不变');
+ok([oldMonthCurrentStartOnly.id, oldMonthFutureStartOnly.id].every(taskRowUnchanged),
+  'API 后旧 month 的当前未来 start-only 全部字段不变');
+ok([oldMonthCurrentEndOnly.id, oldMonthFutureEndOnly.id].every(taskRowUnchanged),
+  'API 后旧 month 的当前未来 end-only 全部字段不变');
 const monthSentinelAfter = tdb.prepare(`SELECT ${monthExecutionFields} FROM executions WHERE id=?`).get(monthSentinel.id);
 ok(JSON.stringify(monthSentinelAfter) === JSON.stringify(monthSentinelBefore),
   '月顺延不修改旧日未完成 execution 的完整关键字段');

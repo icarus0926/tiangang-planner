@@ -59,8 +59,10 @@ function selectPastRoots(tasks, scope, to) {
   const isOpen = task => task.status !== 'done' && task.status !== 'archived';
   const targetMonth = scope === 'month' ? to : to.slice(0, 7);
   const targetEnd = scope === 'week' ? addDaysIso(to, 6) : null;
+  const hasCurrentOrFutureMonthDate = task => [task.start_date, task.end_date]
+    .some(date => isIsoDate(date) && date >= `${to}-01`);
   const isPast = task => {
-    if (scope === 'month' && hasCurrentWindowDate(task)) return false;
+    if (scope === 'month' && hasCurrentOrFutureMonthDate(task)) return false;
     const endIsPast = isIsoDate(task.end_date) && task.end_date < (scope === 'week' ? to : `${to}-01`);
     return scope === 'week'
       ? endIsPast
