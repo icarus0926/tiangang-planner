@@ -307,6 +307,106 @@ const rolledBack = tdb.prepare('SELECT id,date FROM executions WHERE id IN (?,?)
 ok(failedTx.status === 500 && rolledBack[0]?.date === dayDates.tx_first && rolledBack[1]?.date === dayDates.tx_second, '每日顺延任一失败时整批事务回滚');
 tdb.exec('DROP TRIGGER fail_past_day_rollover');
 
+// ── 全量过往周任务簇顺延
+tdb.exec('DELETE FROM executions; DELETE FROM tasks');
+const wRoot = (await api('POST', '/api/task', { name: '过往周簇' })).body.task;
+const wOpen = (await api('POST', '/api/task', {
+  name: '周未完成', parent_id: wRoot.id, month: '2026-07', start: '2026-07-22', end: '2026-07-24'
+})).body.task;
+const wLater = (await api('POST', '/api/task', {
+  name: '周后续未完成', parent_id: wRoot.id, month: '2026-07', start: '2026-07-29', end: '2026-07-31'
+})).body.task;
+const wDone = (await api('POST', '/api/task', {
+  name: '周已完成', parent_id: wRoot.id, month: '2026-07', start: '2026-07-20', end: '2026-07-21'
+})).body.task;
+await api('POST', `/api/task/${wDone.id}/toggle-done`);
+const wDoneBefore = tdb.prepare('SELECT * FROM tasks WHERE id=?').get(wDone.id);
+const wCurrent = (await api('POST', '/api/task', { name: '已在本周', start: '2026-08-05', end: '2026-08-08' })).body.task;
+const wFuture = (await api('POST', '/api/task', { name: '未来周任务', start: '2026-08-18', end: '2026-08-19' })).body.task;
+const wPool = (await api('POST', '/api/task', { name: '无日期普通池' })).body.task;
+const wArchived = (await api('POST', '/api/task', { name: '已归档过期任务', start: '2026-07-23', end: '2026-07-24' })).body.task;
+await api('DELETE', `/api/task/${wArchived.id}`);
+
+ok((await api('POST', '/api/rollover/past', { scope: 'week', to: '2026-08-04' })).status === 400,
+  '过往周顺延拒绝非周一目标');
+const weekAuditStart = tdb.prepare('SELECT COALESCE(MAX(id),0) id FROM audit').get().id;
+const pastWeek = await api('POST', '/api/rollover/past', { scope: 'week', to: '2026-08-03' });
+data = (await api('GET', '/api/data')).body;
+ok(pastWeek.status === 200 && pastWeek.body.count === 2 &&
+  JSON.stringify(pastWeek.body.roots) === JSON.stringify([wRoot.id]),
+  '过往周簇按最高无日期父节点处理并返回移动数/簇根');
+ok(find(wOpen.id).start_date === '2026-08-05' && find(wOpen.id).end_date === '2026-08-07' &&
+  find(wLater.id).start_date === '2026-08-12' && find(wLater.id).end_date === '2026-08-14',
+  '周簇统一平移 14 天并保持星期、时长和树内相对排期');
+ok(find(wRoot.id).rollover_origin_week === '2026-07-20' &&
+  find(wOpen.id).rollover_origin_week === '2026-07-20' &&
+  find(wLater.id).rollover_origin_week === '2026-07-20',
+  '簇根和全部移动节点记录首次来源周');
+ok(find(wOpen.id).month === '2026-08' && find(wLater.id).month === '2026-08' &&
+  find(wOpen.id).rollover_origin_month === '2026-07' && find(wLater.id).rollover_origin_month === '2026-07',
+  '跨月周顺延更新目标月份并保留首次来源月');
+ok(find(wDone.id).start_date === wDoneBefore.start_date && find(wDone.id).end_date === wDoneBefore.end_date &&
+  find(wDone.id).done_at === wDoneBefore.done_at,
+  '部分完成父簇只顺延开放分支且已完成历史/done_at 不变');
+ok(find(wCurrent.id).start_date === '2026-08-05' && find(wFuture.id).start_date === '2026-08-18' &&
+  find(wPool.id).start_date == null && find(wPool.id).rollover_origin_week == null,
+  '本周相交、未来和无日期普通池节点不移动');
+const archivedData = (await api('GET', '/api/data?archived=1')).body;
+const archivedAfter = archivedData.tasks.find(t => t.id === wArchived.id);
+ok(archivedAfter?.start_date === '2026-07-23' && archivedAfter.rollover_origin_week == null,
+  'archived 过期节点不移动');
+
+const weekAudits = tdb.prepare('SELECT entity_id,before_json,after_json FROM audit WHERE id>? ORDER BY id').all(weekAuditStart)
+  .map(row => ({
+    entity_id: row.entity_id,
+    before: row.before_json ? JSON.parse(row.before_json) : null,
+    after: row.after_json ? JSON.parse(row.after_json) : null
+  }));
+const auditedTaskChange = id => weekAudits.some(row => row.entity_id === id && row.before && row.after &&
+  (row.before.start_date !== row.after.start_date || row.before.rollover_origin_week !== row.after.rollover_origin_week));
+ok([wRoot.id, wOpen.id, wLater.id].every(auditedTaskChange), '周顺延逐项审计簇根来源与每个实际移动');
+ok(weekAudits.some(row => row.entity_id == null && row.after?.to === '2026-08-03' &&
+  row.after.count === 2 && JSON.stringify(row.after.roots) === JSON.stringify([wRoot.id]) &&
+  JSON.stringify(row.after.origins) === JSON.stringify(['2026-07-20'])),
+  '周顺延批次审计记录 to/count/roots/origins');
+const pastWeekAgain = await api('POST', '/api/rollover/past', { scope: 'week', to: '2026-08-03' });
+ok(pastWeekAgain.status === 200 && pastWeekAgain.body.count === 0 && pastWeekAgain.body.roots.length === 0,
+  '重复顺延同一目标周幂等');
+
+tdb.exec('DELETE FROM tasks');
+const provenanceRoot = (await api('POST', '/api/task', { name: '多次顺延簇' })).body.task;
+const provenanceTask = (await api('POST', '/api/task', {
+  name: '多次顺延节点', parent_id: provenanceRoot.id, month: '2026-07', start: '2026-07-15', end: '2026-07-16'
+})).body.task;
+const provenanceWeekFirst = await api('POST', '/api/rollover/past', { scope: 'week', to: '2026-08-03' });
+const provenanceWeekSecond = await api('POST', '/api/rollover/past', { scope: 'week', to: '2026-08-10' });
+data = (await api('GET', '/api/data')).body;
+ok(provenanceWeekFirst.body.count === 1 && provenanceWeekSecond.body.count === 1 &&
+  find(provenanceTask.id).start_date === '2026-08-12' && find(provenanceTask.id).end_date === '2026-08-13' &&
+  find(provenanceRoot.id).rollover_origin_week === '2026-07-13' &&
+  find(provenanceTask.id).rollover_origin_week === '2026-07-13' &&
+  find(provenanceTask.id).rollover_origin_month === '2026-07',
+  '多次周顺延继续平移排期且不覆盖首次来源周/月');
+
+tdb.exec('DELETE FROM tasks');
+const weekTxRoot = (await api('POST', '/api/task', { name: '周事务簇' })).body.task;
+const weekTxFirst = (await api('POST', '/api/task', {
+  name: '周事务节点一', parent_id: weekTxRoot.id, start: '2026-07-22', end: '2026-07-24'
+})).body.task;
+const weekTxSecond = (await api('POST', '/api/task', {
+  name: '周事务节点二', parent_id: weekTxRoot.id, start: '2026-07-29', end: '2026-07-31'
+})).body.task;
+tdb.exec(`CREATE TRIGGER fail_past_week_rollover BEFORE UPDATE OF start_date ON tasks
+  WHEN OLD.id=${weekTxSecond.id} BEGIN SELECT RAISE(ABORT,'test week rollback'); END`);
+const failedWeekTx = await api('POST', '/api/rollover/past', { scope: 'week', to: '2026-08-03' });
+const weekRolledBack = tdb.prepare('SELECT * FROM tasks WHERE id IN (?,?,?) ORDER BY id')
+  .all(weekTxRoot.id, weekTxFirst.id, weekTxSecond.id);
+ok(failedWeekTx.status === 500 && weekRolledBack[0]?.rollover_origin_week == null &&
+  weekRolledBack[1]?.start_date === '2026-07-22' && weekRolledBack[1]?.rollover_origin_week == null &&
+  weekRolledBack[2]?.start_date === '2026-07-29' && weekRolledBack[2]?.rollover_origin_week == null,
+  '周顺延任一节点失败时整批任务/来源审计事务回滚');
+tdb.exec('DROP TRIGGER fail_past_week_rollover');
+
 // ── 审计
 const auditCount = tdb.prepare('SELECT COUNT(*) c FROM audit').get().c;
 ok(auditCount > 20, `审计日志已记录(${auditCount}条)`);

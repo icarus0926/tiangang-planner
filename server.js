@@ -8,7 +8,7 @@ try { require('dotenv').config({ path: __dirname + '/.env' }); } catch (e) { /* 
 const express = require('express');
 const path = require('path');
 const { open, tx, backup } = require('./db.js');
-const { validateTarget } = require('./rollover.js');
+const { validateTarget, selectPastRoots, addDaysIso } = require('./rollover.js');
 
 const app = express();
 app.use(express.json());
@@ -281,6 +281,44 @@ app.post('/api/rollover/past', (req, res) => {
   try {
     const { scope, to } = req.body || {};
     if (!validateTarget(scope, to)) return res.status(400).json({ error: 'invalid target' });
+    if (scope === 'week') {
+      let count = 0;
+      const roots = [], origins = [];
+      tx(db, () => {
+        const rows = db.prepare(`SELECT * FROM tasks WHERE status!='archived'`).all();
+        const groups = selectPastRoots(rows, 'week', to);
+        const setRootOrigin = db.prepare(`UPDATE tasks SET rollover_origin_week=?
+          WHERE id=? AND rollover_origin_week IS NULL`);
+        const moveTask = db.prepare(`UPDATE tasks SET
+          start_date=?, end_date=?,
+          rollover_origin_week=COALESCE(rollover_origin_week,?),
+          rollover_origin_month=CASE WHEN month IS NOT NULL AND month<?
+            THEN COALESCE(rollover_origin_month,month) ELSE rollover_origin_month END,
+          month=?
+          WHERE id=? AND status!='done' AND status!='archived'`);
+        const targetMonth = to.slice(0, 7);
+
+        for (const group of groups) {
+          roots.push(group.root.id);
+          origins.push(group.origin);
+          const rootBefore = getTask(group.root.id);
+          if (setRootOrigin.run(group.origin, group.root.id).changes) {
+            audit('task', group.root.id, 'rollover-week-origin', rootBefore, getTask(group.root.id));
+          }
+          for (const task of group.nodes) {
+            const before = getTask(task.id);
+            const start = task.start_date == null ? null : addDaysIso(task.start_date, group.deltaDays);
+            const end = task.end_date == null ? null : addDaysIso(task.end_date, group.deltaDays);
+            if (moveTask.run(start, end, group.origin, targetMonth, targetMonth, task.id).changes) {
+              count++;
+              audit('task', task.id, 'rollover-week', before, getTask(task.id));
+            }
+          }
+        }
+        audit('task', null, 'rollover-past-week', { to }, { to, count, roots, origins });
+      });
+      return res.json({ ok: true, count, roots });
+    }
     if (scope !== 'day') return res.status(400).json({ error: 'bad scope' });
 
     let count = 0, merged = 0;
