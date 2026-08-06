@@ -33,7 +33,9 @@ CREATE TABLE IF NOT EXISTS tasks (
   sort REAL, note TEXT,
   created_at TEXT DEFAULT (datetime('now','localtime')),
   done_at TEXT,
-  notion_id TEXT
+  notion_id TEXT,
+  rollover_origin_week TEXT,
+  rollover_origin_month TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_month  ON tasks(month);
@@ -45,6 +47,7 @@ CREATE TABLE IF NOT EXISTS executions (
   date TEXT NOT NULL,
   done INTEGER DEFAULT 0,
   notion_id TEXT,
+  rollover_origin_date TEXT,
   UNIQUE(task_id, date)
 );
 CREATE INDEX IF NOT EXISTS idx_exec_date ON executions(date);
@@ -60,12 +63,20 @@ CREATE TABLE IF NOT EXISTS meta (
 );
 `;
 
+function ensureColumn(db, table, column, type = 'TEXT') {
+  const names = new Set(db.prepare(`PRAGMA table_info(${table})`).all().map(x => x.name));
+  if (!names.has(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+}
+
 function open(dbPath = DB_PATH) {
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   const db = new DatabaseSync(dbPath);
   db.exec('PRAGMA journal_mode=WAL');
   db.exec('PRAGMA foreign_keys=ON');
   db.exec(SCHEMA);
+  ensureColumn(db, 'tasks', 'rollover_origin_week');
+  ensureColumn(db, 'tasks', 'rollover_origin_month');
+  ensureColumn(db, 'executions', 'rollover_origin_date');
   return db;
 }
 

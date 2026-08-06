@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DatabaseSync } from 'node:sqlite';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 process.env.DB_PATH = path.join(HERE, 'data', `test-${Date.now()}.db`);
@@ -20,10 +21,38 @@ const api = async (method, p, body) => {
   const r = await fetch('http://localhost:8899' + p, { method, headers: H, body: body ? JSON.stringify(body) : undefined });
   return { status: r.status, body: await r.json().catch(() => ({})) };
 };
+
+const legacyPath = path.join(HERE, 'data', `legacy-${Date.now()}.db`);
+const legacy = new DatabaseSync(legacyPath);
+legacy.exec(`
+  CREATE TABLE goals(id INTEGER PRIMARY KEY,name TEXT NOT NULL);
+  CREATE TABLE tasks(
+    id INTEGER PRIMARY KEY,parent_id INTEGER REFERENCES tasks(id),goal_id INTEGER REFERENCES goals(id),
+    name TEXT NOT NULL,kind TEXT,priority TEXT,status TEXT,month TEXT,start_date TEXT,end_date TEXT,
+    sort REAL,note TEXT,created_at TEXT,done_at TEXT,notion_id TEXT
+  );
+  CREATE TABLE executions(
+    id INTEGER PRIMARY KEY,task_id INTEGER REFERENCES tasks(id),text TEXT,date TEXT NOT NULL,
+    done INTEGER DEFAULT 0,notion_id TEXT,UNIQUE(task_id,date)
+  );
+`);
+legacy.close();
+const { open: openDb } = require('./db.js');
+const migrated = openDb(legacyPath);
+const taskCols = migrated.prepare('PRAGMA table_info(tasks)').all().map(x => x.name);
+const execCols = migrated.prepare('PRAGMA table_info(executions)').all().map(x => x.name);
+const legacyMigrationPassed = taskCols.includes('rollover_origin_week') &&
+  taskCols.includes('rollover_origin_month') && execCols.includes('rollover_origin_date');
+const migratedAgain = openDb(legacyPath);
+migratedAgain.close();
+migrated.close();
+for (const suf of ['', '-wal', '-shm']) { try { fs.unlinkSync(legacyPath + suf); } catch {} }
+
 let pass = 0, fail = 0;
 const ok = (c, m) => c ? (pass++, console.log('  ✓', m)) : (fail++, console.log('  ✗', m));
 
 // ── 任务池分类整块排序(纯函数,浏览器与测试共用)
+ok(legacyMigrationPassed, 'legacy db migration adds rollover provenance columns');
 ok(typeof reorderTags === 'function' &&
   JSON.stringify(reorderTags(['工作', '学习', '投资', '副业', '其他'], '投资', '工作', true)) ===
   JSON.stringify(['投资', '工作', '学习', '副业', '其他']), '分类排序:整块移到目标前');
@@ -116,6 +145,9 @@ ok(roll.count === 3 && find(dateParent.id).month === '2026-08' && find(dateParen
 const ex1 = (await api('POST', '/api/execution', { text: '自由待办', date: '2026-07-15' })).body.execution;
 ok(ex1.text === '自由待办' && !ex1.task_id, '自由文本待办');
 const ex2 = (await api('POST', '/api/execution', { task_id: F.id, date: '2026-07-15' })).body.execution;
+data = (await api('GET', '/api/data')).body;
+ok(Object.hasOwn(find(F.id), 'rollover_origin_week') && Object.hasOwn(ex2, 'rollover_origin_date'),
+  'GET /api/data returns rollover provenance fields');
 ok(ex2.task_name === 'F', '任务关联待办带任务名');
 ok((await api('POST', '/api/execution', { task_id: F.id, date: '2026-07-15' })).status === 409, '同任务同日查重 409');
 // 勾关联叶子 → 任务完成联动
