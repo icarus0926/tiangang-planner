@@ -459,17 +459,40 @@ CSS：
 - [x] **Step 3: 增加来源读取和格式化助手**
 
 ```js
+function scheduleIntersects(t,start,end){
+  const s=t.start_date||t.end_date,e=t.end_date||t.start_date;
+  return !!s&&!!e&&s<=end&&e>=start;
+}
+function canInheritOrigin(t,scope){
+  if(!t||t.status==='done'||t.status==='archived')return false;
+  if(scope==='week')return scheduleIntersects(t,viewWeekMon,addDays(viewWeekMon,6));
+  if(scope==='month'){
+    const start=`${viewMonth}-01`,end=`${viewMonth}-${pad2(daysInMonth(viewMonth))}`;
+    return t.month===viewMonth||scheduleIntersects(t,start,end);
+  }
+  return false;
+}
 function inheritedOrigin(t,key){
-  let c=t;
+  if(t[key])return t[key];
+  const scope=key==='rollover_origin_week'?'week':'month';
+  if(!canInheritOrigin(t,scope))return null;
+  let c=t.parent_id==null?null:MAP.get(t.parent_id);
   while(c){if(c[key])return c[key];c=c.parent_id==null?null:MAP.get(c.parent_id);}
   return null;
 }
+function originOf(item,scope){
+  if(scope==='day')return item.rollover_origin_date||null;
+  if(scope==='week')return inheritedOrigin(item,'rollover_origin_week');
+  if(scope==='month')return inheritedOrigin(item,'rollover_origin_month');
+  return null;
+}
 function originBadge(item,scope){
-  let raw=null,text='';
-  if(scope==='day'){raw=item.rollover_origin_date;if(raw)text=`来自 ${+raw.slice(5,7)}月${+raw.slice(8,10)}日`;}
-  if(scope==='week'){raw=inheritedOrigin(item,'rollover_origin_week');if(raw)text=`来自 ${weekLabel(raw)}`;}
-  if(scope==='month'){raw=inheritedOrigin(item,'rollover_origin_month');if(raw)text=`来自 ${+raw.slice(5,7)}月`;}
-  return raw?`<span class="originchip" title="首次顺延来源：${esc(raw)}">${text}</span>`:'';
+  const raw=originOf(item,scope);let text='';
+  if(scope==='day'&&raw)text=`来自 ${+raw.slice(5,7)}月${+raw.slice(8,10)}日`;
+  if(scope==='week'&&raw)text=`来自 ${weekLabel(raw)}`;
+  if(scope==='month'&&raw)text=`来自 ${+raw.slice(0,4)}年${+raw.slice(5,7)}月`;
+  const title=scope==='week'&&raw?`${raw} 至 ${addDays(raw,6)}`:raw;
+  return raw?`<span class="originchip" title="首次顺延来源：${esc(title)}">${esc(text)}</span>`:'';
 }
 ```
 
@@ -501,7 +524,7 @@ async function runPastRollover(btn,scope,to,onTarget){
 绑定：
 
 ```js
-$('rollPastDay').addEventListener('click',()=>runPastRollover($('rollPastDay'),'day',today(),()=>{viewDay=today();}));
+$('rollPastDay').addEventListener('click',()=>{const target=today();return runPastRollover($('rollPastDay'),'day',target,()=>{viewDay=target;});});
 $('rollPastWeek').addEventListener('click',()=>{const mon=fmtDate(mondayOf(new Date()));return runPastRollover($('rollPastWeek'),'week',mon,()=>{viewWeekMon=mon;});});
 $('rollPastMonth').addEventListener('click',()=>{const ym=ymOf(today());return runPastRollover($('rollPastMonth'),'month',ym,()=>{viewMonth=ym;});});
 ```

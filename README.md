@@ -81,7 +81,7 @@ install: npm install
 config: copy .env.example to .env; set DASH_PASSWORD (any string), PORT (default 8790)
 run: npm start          # or: node server.js
 verify: GET /api/data with header "x-dash-key: <DASH_PASSWORD>" returns {goals,tasks,executions}
-test: npm test          # 117 integration checks, temporary SQLite database (verified 2026-08-06)
+test: npm test          # 132 integration checks, temporary SQLite database (verified 2026-08-06)
 data: single file data/tiangang.db (auto-created; WAL mode; auto-backup to backups/)
 ```
 
