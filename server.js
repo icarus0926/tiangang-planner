@@ -8,6 +8,7 @@ try { require('dotenv').config({ path: __dirname + '/.env' }); } catch (e) { /* 
 const express = require('express');
 const path = require('path');
 const { open, tx, backup } = require('./db.js');
+const { validateTarget } = require('./rollover.js');
 
 const app = express();
 app.use(express.json());
@@ -273,6 +274,46 @@ app.post('/api/rollover', (req, res) => {
       } else throw new Error('bad scope');
     });
     res.json({ ok: true, count: n });
+  } catch (e) { res.status(500).json({ error: String(e) }); }
+});
+
+app.post('/api/rollover/past', (req, res) => {
+  try {
+    const { scope, to } = req.body || {};
+    if (!validateTarget(scope, to)) return res.status(400).json({ error: 'invalid target' });
+    if (scope !== 'day') return res.status(400).json({ error: 'bad scope' });
+
+    let count = 0, merged = 0;
+    tx(db, () => {
+      const rows = db.prepare(`SELECT * FROM executions WHERE date<? AND done=0 ORDER BY date,id`).all(to);
+      const targetByTask = new Map(db.prepare(`SELECT * FROM executions WHERE date=? AND done=0 AND task_id IS NOT NULL`).all(to)
+        .map(x => [x.task_id, x]));
+      const anyTargetForTask = db.prepare(`SELECT * FROM executions WHERE date=? AND task_id=?`);
+
+      for (const row of rows) {
+        count++;
+        let target = row.task_id == null ? null : targetByTask.get(row.task_id);
+        if (!target && row.task_id != null) {
+          target = anyTargetForTask.get(to, row.task_id);
+          if (target) targetByTask.set(row.task_id, target);
+        }
+        if (!target) {
+          const origin = row.rollover_origin_date || row.date;
+          db.prepare(`UPDATE executions SET date=?, rollover_origin_date=COALESCE(rollover_origin_date,date) WHERE id=?`).run(to, row.id);
+          if (row.task_id != null) targetByTask.set(row.task_id, { ...row, date: to, rollover_origin_date: origin });
+          continue;
+        }
+
+        const origin = [target.rollover_origin_date || target.date, row.rollover_origin_date || row.date].sort()[0];
+        db.prepare(`UPDATE executions SET rollover_origin_date=? WHERE id=?`).run(origin, target.id);
+        db.prepare(`DELETE FROM executions WHERE id=?`).run(row.id);
+        target.rollover_origin_date = origin;
+        merged++;
+        audit('execution', target.id, 'rollover-day-merge', row, { removed_id: row.id, kept_id: target.id });
+      }
+      audit('execution', null, 'rollover-past-day', { to }, { count, roots: [], merged });
+    });
+    res.json({ ok: true, count, roots: [], merged });
   } catch (e) { res.status(500).json({ error: String(e) }); }
 });
 

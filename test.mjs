@@ -237,10 +237,63 @@ data = (await api('GET', '/api/data')).body;
 ok(Array.isArray(data.tags) && data.tags.includes('自定义X'), 'GET /api/data 返回自定义标签');
 ok((await api('POST', '/api/tags', { tags: 'bad' })).status === 400, '标签校验:非数组 400');
 
-// ── 审计
+// ── 全量过往每日待办顺延
 const { createRequire: cr } = await import('node:module');
 const { open } = cr(import.meta.url)('./db.js');
 const tdb = open(process.env.DB_PATH);
+const dayTask = (await api('POST', '/api/task', { name: '每日关联任务' })).body.task;
+const oldFree = (await api('POST', '/api/execution', { text: '旧自由待办', date: '2026-07-01' })).body.execution;
+const oldLinked = (await api('POST', '/api/execution', { task_id: dayTask.id, date: '2026-07-02' })).body.execution;
+const todayLinked = (await api('POST', '/api/execution', { task_id: dayTask.id, date: '2026-07-10' })).body.execution;
+const completedOld = (await api('POST', '/api/execution', { text: '旧已完成', date: '2026-07-03' })).body.execution;
+await api('PATCH', `/api/execution/${completedOld.id}`, { done: true });
+const pastDay = await api('POST', '/api/rollover/past', { scope: 'day', to: '2026-07-10' });
+ok(pastDay.status === 200 && pastDay.body.count === 2 && pastDay.body.merged === 1 &&
+  Array.isArray(pastDay.body.roots) && pastDay.body.roots.length === 0,
+  '全部过往每日待办拉到今天并合并冲突');
+data = (await api('GET', '/api/data')).body;
+const movedFree = data.executions.find(x => x.id === oldFree.id);
+const keptToday = data.executions.find(x => x.id === todayLinked.id);
+ok(movedFree?.date === '2026-07-10' && movedFree.rollover_origin_date === '2026-07-01', '自由待办保留首次来源日');
+ok(keptToday?.rollover_origin_date === '2026-07-02' && !data.executions.some(x => x.id === oldLinked.id), '关联待办冲突合并到今天记录');
+ok(data.executions.find(x => x.id === completedOld.id)?.date === '2026-07-03', '已完成历史不顺延');
+const mergeAudit = tdb.prepare(`SELECT after_json FROM audit WHERE entity='execution' AND after_json IS NOT NULL ORDER BY id DESC`).all()
+  .map(x => { try { return JSON.parse(x.after_json); } catch { return null; } })
+  .find(x => x?.removed_id === oldLinked.id && x?.kept_id === todayLinked.id);
+ok(!!mergeAudit, '关联待办合并审计记录 removed_id/kept_id');
+const pastDayAgain = await api('POST', '/api/rollover/past', { scope: 'day', to: '2026-07-10' });
+ok(pastDayAgain.status === 200 && pastDayAgain.body.count === 0 && pastDayAgain.body.merged === 0, '重复顺延同一目标日幂等');
+
+const provenance = (await api('POST', '/api/execution', { text: '已有来源待办', date: '2026-07-04' })).body.execution;
+tdb.prepare('UPDATE executions SET rollover_origin_date=? WHERE id=?').run('2026-06-20', provenance.id);
+const provenanceRoll = await api('POST', '/api/rollover/past', { scope: 'day', to: '2026-07-10' });
+data = (await api('GET', '/api/data')).body;
+ok(provenanceRoll.status === 200 && provenanceRoll.body.count === 1 &&
+  data.executions.find(x => x.id === provenance.id)?.rollover_origin_date === '2026-06-20',
+  '再次顺延不覆盖首次来源日');
+
+const completedTargetTask = (await api('POST', '/api/task', { name: '目标日已完成任务' })).body.task;
+const completedTargetOld = (await api('POST', '/api/execution', { task_id: completedTargetTask.id, date: '2026-07-07' })).body.execution;
+const completedTarget = (await api('POST', '/api/execution', { task_id: completedTargetTask.id, date: '2026-07-10' })).body.execution;
+tdb.prepare('UPDATE executions SET done=1,text=? WHERE id=?').run('目标日保留文本', completedTarget.id);
+const completedTargetRoll = await api('POST', '/api/rollover/past', { scope: 'day', to: '2026-07-10' });
+const keptCompletedTarget = tdb.prepare('SELECT * FROM executions WHERE id=?').get(completedTarget.id);
+ok(completedTargetRoll.status === 200 && completedTargetRoll.body.count === 1 && completedTargetRoll.body.merged === 1 &&
+  keptCompletedTarget?.done === 1 && keptCompletedTarget.text === '目标日保留文本' &&
+  keptCompletedTarget.rollover_origin_date === '2026-07-07' && !tdb.prepare('SELECT id FROM executions WHERE id=?').get(completedTargetOld.id),
+  '合并保留目标日记录的完成与文本语义');
+ok((await api('POST', '/api/rollover/past', { scope: 'day', to: '2026-02-30' })).status === 400, '过往每日顺延拒绝非法目标日期');
+
+const txFirst = (await api('POST', '/api/execution', { text: '事务记录一', date: '2026-07-05' })).body.execution;
+const txSecond = (await api('POST', '/api/execution', { text: '事务记录二', date: '2026-07-06' })).body.execution;
+tdb.exec(`CREATE TRIGGER fail_past_day_rollover BEFORE UPDATE OF date ON executions
+  WHEN OLD.id=${txSecond.id} BEGIN SELECT RAISE(ABORT,'test rollback'); END`);
+const failedTx = await api('POST', '/api/rollover/past', { scope: 'day', to: '2026-07-10' });
+const rolledBack = tdb.prepare('SELECT id,date FROM executions WHERE id IN (?,?) ORDER BY id').all(txFirst.id, txSecond.id);
+ok(failedTx.status === 500 && rolledBack[0]?.date === '2026-07-05' && rolledBack[1]?.date === '2026-07-06', '每日顺延任一失败时整批事务回滚');
+tdb.exec('DROP TRIGGER fail_past_day_rollover');
+
+// ── 审计
 const auditCount = tdb.prepare('SELECT COUNT(*) c FROM audit').get().c;
 ok(auditCount > 20, `审计日志已记录(${auditCount}条)`);
 
