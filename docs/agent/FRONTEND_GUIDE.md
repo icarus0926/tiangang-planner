@@ -33,13 +33,13 @@
 
 ## 全部过往未完成顺延与来源徽章
 
-入口函数是 `runPastRollover(btn, scope, to, onTarget)`：先确认“全部过往未完成项顺延到今天/本周/本月”，调用 `POST /api/rollover/past`，成功后执行目标窗口回调、`reload()` 和 toast。三个入口在点击时计算真实目标，而不是使用用户正在浏览的窗口：daily 传 `today()` 并复位 `viewDay=today()`；week 传 `fmtDate(mondayOf(new Date()))` 并复位 `viewWeekMon`；month 传 `ymOf(today())` 并复位 `viewMonth`。前端不得把周目标改成非周一，也不得自行批量 PATCH 任务。旧 `POST /api/rollover` 的指定来源顺延，以及“未完成顺延明天/下月”按钮继续保留，不能被新入口替代。
+入口函数是 `runPastRollover(btn, scope, to, onTarget)`：先确认“全部过往未完成项顺延到今天/本周/本月”，调用 `POST /api/rollover/past`，成功后执行目标窗口回调、`reload()` 和 toast。三个入口在点击时计算真实目标，而不是使用用户正在浏览的窗口：daily 必须把一次 `today()` 结果同时用于请求与成功后的 `viewDay`，避免跨午夜产生两个目标；week 传 `fmtDate(mondayOf(new Date()))` 并复位 `viewWeekMon`；month 传 `ymOf(today())` 并复位 `viewMonth`。前端不得把周目标改成非周一，也不得自行批量 PATCH 任务。旧 `POST /api/rollover` 的指定来源顺延，以及“未完成顺延明天/下月”按钮继续保留，不能被新入口替代。
 
-来源显示由 `originOf()` 与 `originBadge()` 统一处理：daily 只读取 execution 自己的 `rollover_origin_date`，显示“来自 M 月 D 日”；week/month 通过 `inheritedOrigin()` 从当前任务向上沿 `parent_id` 链查找最近的 `rollover_origin_week` 或 `rollover_origin_month`，显示首次来源周或月。这个继承仅用于 UI 解释任务簇来源，不会回写子节点或改变 API 数据。
+来源显示由 `originOf()` 与 `originBadge()` 统一处理：daily 只读取 execution 自己的 `rollover_origin_date`，显示“来自 M 月 D 日”；任务自己的周/月来源始终优先。没有自身来源时，只有状态开放且自身 `month`/日期排期属于或相交当前渲染月/周窗口的任务，才可通过 `inheritedOrigin()` 沿 `parent_id` 链读取最近来源；`done`、`archived`、窗口外未来兄弟和无日期池子节点不得继承。周徽章 title 使用来源周一至周日的完整 ISO 范围。继承仅用于 UI 解释任务簇来源，不会回写子节点或改变 API 数据。
 
 `/api/rollover/past` 的 scope/目标格式为：`day` + `YYYY-MM-DD`、`week` + 周一的 `YYYY-MM-DD`、`month` + `YYYY-MM`。成功响应包含 `{ok,count,roots,merged}`；daily 的 `merged` 表示同任务目标日 execution 的合并次数。周没有持久化业务 `week` 字段，展示和顺延均以 7 天日期窗口计算。月顺延由服务端统一处理月末 clamp 和同簇 `deltaDays`，前端只刷新结果，不得重新计算或逐项移动。
 
-UI 文案应保持以下事实：已完成历史不移动；部分完成任务簇仅移动未完成节点；首次来源在多次顺延中不变；daily 合并及其合并审计、周/月逐项审计和三种 scope 的批次审计均由服务端事务保证。
+UI 文案应保持以下事实：已完成历史不移动；部分完成任务簇仅移动未完成节点；首次来源在多次顺延中不变；daily 合并及其合并审计、周/月逐项审计和三种 scope 的批次审计均由服务端事务保证。批次 `origins` 记录最终持久首次来源：周/月与 `roots` 同索引对应，daily 汇总最终保留的移动/合并 execution。
 
 ## 五个页面
 

@@ -73,8 +73,62 @@ ok(frontHtml.includes('.originchip{') && frontHtml.includes('.rollbtn.primary{')
 const originHelpers = frontSection('function inheritedOrigin(', '/* ================= API ================= */');
 ok(originHelpers.includes("inheritedOrigin(item,'rollover_origin_week')") &&
   originHelpers.includes("inheritedOrigin(item,'rollover_origin_month')") &&
-  originHelpers.includes('item.rollover_origin_date') && originHelpers.includes('${esc(raw)}') &&
+  originHelpers.includes('item.rollover_origin_date') && originHelpers.includes('${esc(title)}') &&
   originHelpers.includes('来自 ${weekLabel(raw)}'), '来源助手支持祖先最初周/月、执行最初日期与安全 title');
+
+const originRuntime = frontSection('const esc=', 'let toastTimer=');
+const loadOriginRuntime = ({ tasks, viewMonth = '2026-08', viewWeekMon = '2026-08-03' }) => {
+  const context = vm.createContext({
+    MAP: new Map(tasks.map(task => [task.id, task])),
+    viewMonth,
+    viewWeekMon
+  });
+  vm.runInContext(`${originRuntime};this.originOf=originOf;this.originBadge=originBadge;`, context);
+  return context;
+};
+const originParent = {
+  id: 9001, parent_id: null, status: 'planned', month: '2026-08',
+  start_date: '2026-08-03', end_date: '2026-08-09',
+  rollover_origin_week: '2026-07-20', rollover_origin_month: '2026-07'
+};
+const alignedMonthChild = {
+  id: 9002, parent_id: originParent.id, status: 'planned', month: '2026-08',
+  start_date: null, end_date: null, rollover_origin_week: null, rollover_origin_month: null
+};
+const alignedWeekChild = {
+  id: 9003, parent_id: originParent.id, status: 'planned', month: '2026-08',
+  start_date: '2026-08-05', end_date: '2026-08-06', rollover_origin_week: null, rollover_origin_month: null
+};
+const doneSibling = { ...alignedWeekChild, id: 9004, status: 'done' };
+const archivedSibling = { ...alignedWeekChild, id: 9005, status: 'archived' };
+const futureSibling = {
+  ...alignedWeekChild, id: 9006, month: '2026-09', start_date: '2026-09-01', end_date: '2026-09-02'
+};
+const datelessPoolChild = {
+  id: 9007, parent_id: originParent.id, status: 'pool', month: null,
+  start_date: null, end_date: null, rollover_origin_week: null, rollover_origin_month: null
+};
+const ownOriginDone = {
+  ...doneSibling, id: 9008, rollover_origin_week: '2026-06-29', rollover_origin_month: '2026-06'
+};
+const originCtx = loadOriginRuntime({
+  tasks: [originParent, alignedMonthChild, alignedWeekChild, doneSibling, archivedSibling,
+    futureSibling, datelessPoolChild, ownOriginDone]
+});
+ok(originCtx.originOf(alignedMonthChild, 'month') === '2026-07' &&
+  originCtx.originOf(alignedWeekChild, 'week') === '2026-07-20',
+  '来源继承保留当前渲染窗口内的开放子任务');
+ok(originCtx.originOf(doneSibling, 'week') == null &&
+  originCtx.originOf(archivedSibling, 'week') == null &&
+  originCtx.originOf(futureSibling, 'week') == null &&
+  originCtx.originOf(futureSibling, 'month') == null &&
+  originCtx.originOf(datelessPoolChild, 'month') == null &&
+  originCtx.originOf(ownOriginDone, 'week') === '2026-06-29' &&
+  originCtx.originOf(ownOriginDone, 'month') === '2026-06',
+  '来源继承拒绝完成/归档、窗口外未来和无日期池子节点且自身来源优先');
+ok(originCtx.originBadge(alignedWeekChild, 'week').includes(
+  'title="首次顺延来源：2026-07-20 至 2026-07-26"'),
+  '周来源 tooltip 展示周一至周日 ISO 范围');
 
 const planRender = frontSection('function renderPlanPool(', 'function renderDoneCards(');
 const doneRender = frontSection('function renderDoneCards(', 'function monthRelevant(');
@@ -97,8 +151,26 @@ const rolloverBindings = frontSection("$('rollPastDay').addEventListener", '/* �
 ok(rolloverAction.includes("api('POST','/api/rollover/past',{scope,to})") &&
   rolloverAction.includes('if(!confirm(') && rolloverAction.includes('btn.disabled=true') &&
   rolloverAction.includes('await reload()') && rolloverAction.includes('finally{btn.disabled=false;}') &&
-  rolloverBindings.includes("'day',today()") && rolloverBindings.includes("'week',mon") &&
+  rolloverBindings.includes("'day',") && rolloverBindings.includes("'week',mon") &&
   rolloverBindings.includes("'month',ym"), '全量顺延确认、精确 payload、忙碌态、重载与三类绑定完整');
+
+const dayRolloverBinding = frontSection("$('rollPastDay').addEventListener", "$('rollPastWeek').addEventListener");
+let capturedDayHandler = null, dayTodayCalls = 0, capturedDayTarget = null;
+const dayButton = { addEventListener: (_event, handler) => { capturedDayHandler = handler; } };
+const dayBindingContext = vm.createContext({
+  $: () => dayButton,
+  today: () => ['2026-08-06', '2026-08-07'][dayTodayCalls++],
+  viewDay: '2026-08-01',
+  runPastRollover: (_btn, scope, to, onTarget) => {
+    capturedDayTarget = { scope, request: to };
+    onTarget();
+  }
+});
+vm.runInContext(dayRolloverBinding, dayBindingContext);
+capturedDayHandler?.();
+ok(dayTodayCalls === 1 && capturedDayTarget?.scope === 'day' &&
+  capturedDayTarget.request === '2026-08-06' && dayBindingContext.viewDay === '2026-08-06',
+  '每日全量顺延单次捕获 today 并复用为请求与成功视图目标');
 
 // 直接执行 HTML 中的真实函数；仅替换浏览器/API 边界，不复制实现逻辑
 const loadRunPastRollover = deps => {
@@ -377,7 +449,87 @@ ok((await api('POST', '/api/tags', { tags: 'bad' })).status === 400, '标签校�
 const { createRequire: cr } = await import('node:module');
 const { open } = cr(import.meta.url)('./db.js');
 const tdb = open(process.env.DB_PATH);
-tdb.exec('DELETE FROM executions'); // 隔离此前已完成验证的每日 execution 夹具
+tdb.exec('DELETE FROM executions; DELETE FROM tasks');
+
+// ── 旧入口与新入口混用仍保留首次来源，且旧入口逐项审计包含来源状态
+const legacyMonthTask = (await api('POST', '/api/task', {
+  name: '旧月入口来源链', month: '2026-07'
+})).body.task;
+const legacyMonthAuditStart = tdb.prepare('SELECT COALESCE(MAX(id),0) id FROM audit').get().id;
+const legacyMonthRoll = await api('POST', '/api/rollover', {
+  scope: 'month', from: '2026-07', to: '2026-08'
+});
+const legacyMonthAfter = tdb.prepare('SELECT * FROM tasks WHERE id=?').get(legacyMonthTask.id);
+const legacyMonthAuditRow = tdb.prepare(`SELECT before_json,after_json FROM audit
+  WHERE id>? AND entity='task' AND entity_id=? AND action='rollover-month' ORDER BY id DESC LIMIT 1`)
+  .get(legacyMonthAuditStart, legacyMonthTask.id);
+const legacyMonthAuditState = legacyMonthAuditRow ? {
+  before: JSON.parse(legacyMonthAuditRow.before_json),
+  after: JSON.parse(legacyMonthAuditRow.after_json)
+} : null;
+ok(legacyMonthRoll.status === 200 &&
+  JSON.stringify(Object.keys(legacyMonthRoll.body).sort()) === JSON.stringify(['count', 'ok']) &&
+  legacyMonthRoll.body.count === 1 && legacyMonthAfter.month === '2026-08' &&
+  legacyMonthAfter.rollover_origin_month === '2026-07',
+  '旧月入口保持响应/移动语义并以 COALESCE 写入首次来源月');
+ok(legacyMonthAuditState?.before.rollover_origin_month == null &&
+  legacyMonthAuditState?.after.rollover_origin_month === '2026-07' &&
+  legacyMonthAuditState?.before.month === '2026-07' && legacyMonthAuditState?.after.month === '2026-08',
+  '旧月入口逐项审计 before/after 包含新持久来源状态');
+const mixedMonthAuditStart = tdb.prepare('SELECT COALESCE(MAX(id),0) id FROM audit').get().id;
+const mixedMonthRoll = await api('POST', '/api/rollover/past', { scope: 'month', to: '2026-09' });
+const mixedMonthAfter = tdb.prepare('SELECT * FROM tasks WHERE id=?').get(legacyMonthTask.id);
+const mixedMonthBatch = tdb.prepare(`SELECT after_json FROM audit
+  WHERE id>? AND action='rollover-past-month' ORDER BY id DESC LIMIT 1`).get(mixedMonthAuditStart);
+const mixedMonthBatchAfter = mixedMonthBatch ? JSON.parse(mixedMonthBatch.after_json) : null;
+ok(mixedMonthRoll.status === 200 && mixedMonthRoll.body.count === 1 &&
+  mixedMonthAfter.month === '2026-09' && mixedMonthAfter.rollover_origin_month === '2026-07',
+  '旧月入口七月至八月后接全量顺延到九月仍保留七月来源');
+ok(JSON.stringify(mixedMonthBatchAfter?.origins) === JSON.stringify(['2026-07']),
+  '混用入口后的月批次审计汇总最终持久首次来源');
+
+const legacyDayDates = tdb.prepare(`SELECT
+  date('now','-10 day') origin,
+  date('now','-9 day') middle,
+  date('now','-8 day') target`).get();
+const legacyDayExecution = (await api('POST', '/api/execution', {
+  text: '旧日入口来源链', date: legacyDayDates.origin
+})).body.execution;
+const legacyDayAuditStart = tdb.prepare('SELECT COALESCE(MAX(id),0) id FROM audit').get().id;
+const legacyDayRoll = await api('POST', '/api/rollover', {
+  scope: 'day', from: legacyDayDates.origin, to: legacyDayDates.middle
+});
+const legacyDayAfter = tdb.prepare('SELECT * FROM executions WHERE id=?').get(legacyDayExecution.id);
+const legacyDayAuditRow = tdb.prepare(`SELECT before_json,after_json FROM audit
+  WHERE id>? AND entity='execution' AND entity_id=? AND action='rollover-day' ORDER BY id DESC LIMIT 1`)
+  .get(legacyDayAuditStart, legacyDayExecution.id);
+const legacyDayAuditState = legacyDayAuditRow ? {
+  before: JSON.parse(legacyDayAuditRow.before_json),
+  after: JSON.parse(legacyDayAuditRow.after_json)
+} : null;
+ok(legacyDayRoll.status === 200 &&
+  JSON.stringify(Object.keys(legacyDayRoll.body).sort()) === JSON.stringify(['count', 'ok']) &&
+  legacyDayRoll.body.count === 1 && legacyDayAfter.date === legacyDayDates.middle &&
+  legacyDayAfter.rollover_origin_date === legacyDayDates.origin,
+  '旧日入口保持响应/移动语义并以 COALESCE 写入首次来源日');
+ok(legacyDayAuditState?.before.rollover_origin_date == null &&
+  legacyDayAuditState?.after.rollover_origin_date === legacyDayDates.origin &&
+  legacyDayAuditState?.before.date === legacyDayDates.origin &&
+  legacyDayAuditState?.after.date === legacyDayDates.middle,
+  '旧日入口逐项审计 before/after 包含新持久来源状态');
+const mixedDayAuditStart = tdb.prepare('SELECT COALESCE(MAX(id),0) id FROM audit').get().id;
+const mixedDayRoll = await api('POST', '/api/rollover/past', { scope: 'day', to: legacyDayDates.target });
+const mixedDayAfter = tdb.prepare('SELECT * FROM executions WHERE id=?').get(legacyDayExecution.id);
+const mixedDayBatch = tdb.prepare(`SELECT after_json FROM audit
+  WHERE id>? AND action='rollover-past-day' ORDER BY id DESC LIMIT 1`).get(mixedDayAuditStart);
+const mixedDayBatchAfter = mixedDayBatch ? JSON.parse(mixedDayBatch.after_json) : null;
+ok(mixedDayRoll.status === 200 && mixedDayRoll.body.count === 1 &&
+  mixedDayAfter.date === legacyDayDates.target && mixedDayAfter.rollover_origin_date === legacyDayDates.origin,
+  '旧日入口顺延后接全量顺延仍保留最初日期来源');
+ok(JSON.stringify(mixedDayBatchAfter?.origins) === JSON.stringify([legacyDayDates.origin]),
+  '混用入口后的每日批次审计汇总最终持久首次来源');
+
+tdb.exec('DELETE FROM executions'); // 隔离混用入口与此前每日 execution 夹具
 const dayDates = tdb.prepare(`SELECT
   date('now','-7 day') old_free,
   date('now','-6 day') old_linked,
@@ -396,6 +548,7 @@ const todayLinked = (await api('POST', '/api/execution', { task_id: dayTask.id, 
 const completedOld = (await api('POST', '/api/execution', { text: '旧已完成', date: dayDates.completed_old })).body.execution;
 const futureFree = (await api('POST', '/api/execution', { text: '未来自由待办', date: dayDates.future })).body.execution;
 await api('PATCH', `/api/execution/${completedOld.id}`, { done: true });
+const dayAuditStart = tdb.prepare('SELECT COALESCE(MAX(id),0) id FROM audit').get().id;
 const pastDay = await api('POST', '/api/rollover/past', { scope: 'day', to: dayDates.target });
 ok(pastDay.status === 200 && pastDay.body.count === 2 && pastDay.body.merged === 1 &&
   Array.isArray(pastDay.body.roots) && pastDay.body.roots.length === 0,
@@ -411,6 +564,12 @@ const mergeAudit = tdb.prepare(`SELECT after_json FROM audit WHERE entity='execu
   .map(x => { try { return JSON.parse(x.after_json); } catch { return null; } })
   .find(x => x?.removed_id === oldLinked.id && x?.kept_id === todayLinked.id);
 ok(!!mergeAudit, '关联待办合并审计记录 removed_id/kept_id');
+const dayBatchAudit = tdb.prepare(`SELECT after_json FROM audit
+  WHERE id>? AND action='rollover-past-day' ORDER BY id DESC LIMIT 1`).get(dayAuditStart);
+const dayBatchAuditAfter = dayBatchAudit ? JSON.parse(dayBatchAudit.after_json) : null;
+ok(JSON.stringify(dayBatchAuditAfter?.origins) ===
+  JSON.stringify([dayDates.old_free, dayDates.old_linked].sort()),
+  '每日移动/合并批次审计按最终持久来源汇总 origins');
 const pastDayAgain = await api('POST', '/api/rollover/past', { scope: 'day', to: dayDates.target });
 ok(pastDayAgain.status === 200 && pastDayAgain.body.count === 0 && pastDayAgain.body.merged === 0, '重复顺延同一目标日幂等');
 
@@ -544,6 +703,7 @@ const provenanceTask = (await api('POST', '/api/task', {
   name: '多次顺延节点', parent_id: provenanceRoot.id, month: '2026-07', start: '2026-07-15', end: '2026-07-16'
 })).body.task;
 const provenanceWeekFirst = await api('POST', '/api/rollover/past', { scope: 'week', to: '2026-08-03' });
+const provenanceWeekSecondAuditStart = tdb.prepare('SELECT COALESCE(MAX(id),0) id FROM audit').get().id;
 const provenanceWeekSecond = await api('POST', '/api/rollover/past', { scope: 'week', to: '2026-08-10' });
 data = (await api('GET', '/api/data')).body;
 ok(provenanceWeekFirst.body.count === 1 && provenanceWeekSecond.body.count === 1 &&
@@ -552,6 +712,11 @@ ok(provenanceWeekFirst.body.count === 1 && provenanceWeekSecond.body.count === 1
   find(provenanceTask.id).rollover_origin_week === '2026-07-13' &&
   find(provenanceTask.id).rollover_origin_month === '2026-07',
   '多次周顺延继续平移排期且不覆盖首次来源周/月');
+const provenanceWeekSecondAudit = tdb.prepare(`SELECT after_json FROM audit
+  WHERE id>? AND action='rollover-past-week' ORDER BY id DESC LIMIT 1`).get(provenanceWeekSecondAuditStart);
+const provenanceWeekSecondAuditAfter = provenanceWeekSecondAudit ? JSON.parse(provenanceWeekSecondAudit.after_json) : null;
+ok(JSON.stringify(provenanceWeekSecondAuditAfter?.origins) === JSON.stringify(['2026-07-13']),
+  '重复周顺延批次审计持续汇总最初持久来源周');
 
 tdb.exec('DELETE FROM tasks');
 const weekTxRoot = (await api('POST', '/api/task', { name: '周事务簇' })).body.task;
@@ -723,12 +888,17 @@ const monthMovedIds = [mRoot.id, mOpen.id, relativeRoot.id, relativeChild.id, ol
 ok(monthMovedIds.every(id => monthAudits.some(row => row.entity_id === id && row.action === 'rollover-month' &&
   row.before && row.after && (row.before.start_date !== row.after.start_date || row.before.month !== row.after.month))),
   '月顺延逐项审计每个实际移动节点');
-ok(monthAudits.some(row => row.entity_id == null && row.action === 'rollover-past-month' &&
-  row.after?.to === '2026-02' && row.after.count === 5 &&
-  row.after.roots?.length === expectedMonthRoots.length &&
-  expectedMonthRoots.every(id => row.after.roots.includes(id)) &&
-  row.after.origins?.length === expectedMonthRoots.length && row.after.origins.every(x => x === '2026-01')),
-  '月顺延批次审计记录 to/count/roots/origins');
+const monthBatchAudit = monthAudits.find(row => row.entity_id == null && row.action === 'rollover-past-month');
+const monthOriginByRoot = new Map((monthBatchAudit?.after?.roots || [])
+  .map((rootId, index) => [rootId, monthBatchAudit.after.origins?.[index]]));
+ok(monthBatchAudit &&
+  monthBatchAudit.after?.to === '2026-02' && monthBatchAudit.after.count === 5 &&
+  monthBatchAudit.after.roots?.length === expectedMonthRoots.length &&
+  expectedMonthRoots.every(id => monthBatchAudit.after.roots.includes(id)) &&
+  monthOriginByRoot.get(mRoot.id) === '2026-01' &&
+  monthOriginByRoot.get(relativeRoot.id) === '2025-12' &&
+  monthOriginByRoot.get(oldChildBranch.id) === '2026-01',
+  '月顺延批次审计记录与 roots 对应的持久首次 origins');
 const pastMonthAgain = await api('POST', '/api/rollover/past', { scope: 'month', to: '2026-02' });
 ok(pastMonthAgain.status === 200 && pastMonthAgain.body.count === 0 &&
   pastMonthAgain.body.roots?.length === 0 && pastMonthAgain.body.merged === 0,
@@ -749,6 +919,7 @@ const repeatedTask = (await api('POST', '/api/task', {
   name: '多次月顺延节点', parent_id: repeatedRoot.id, month: '2026-07', start: '2026-07-15', end: '2026-07-16'
 })).body.task;
 const repeatedMonthFirst = await api('POST', '/api/rollover/past', { scope: 'month', to: '2026-08' });
+const repeatedMonthSecondAuditStart = tdb.prepare('SELECT COALESCE(MAX(id),0) id FROM audit').get().id;
 const repeatedMonthSecond = await api('POST', '/api/rollover/past', { scope: 'month', to: '2026-09' });
 data = (await api('GET', '/api/data')).body;
 ok(repeatedMonthFirst.body.count === 1 && repeatedMonthSecond.body.count === 1 &&
@@ -756,6 +927,11 @@ ok(repeatedMonthFirst.body.count === 1 && repeatedMonthSecond.body.count === 1 &
   find(repeatedRoot.id).rollover_origin_month === '2026-07' &&
   find(repeatedTask.id).rollover_origin_month === '2026-07' && find(repeatedTask.id).month === '2026-09',
   '多次月顺延继续平移排期且保留最早原始月');
+const repeatedMonthSecondAudit = tdb.prepare(`SELECT after_json FROM audit
+  WHERE id>? AND action='rollover-past-month' ORDER BY id DESC LIMIT 1`).get(repeatedMonthSecondAuditStart);
+const repeatedMonthSecondAuditAfter = repeatedMonthSecondAudit ? JSON.parse(repeatedMonthSecondAudit.after_json) : null;
+ok(JSON.stringify(repeatedMonthSecondAuditAfter?.origins) === JSON.stringify(['2026-07']),
+  '重复月顺延批次审计持续汇总最初持久来源月');
 
 tdb.exec('DELETE FROM tasks');
 const monthTxRoot = (await api('POST', '/api/task', { name: '月事务簇' })).body.task;

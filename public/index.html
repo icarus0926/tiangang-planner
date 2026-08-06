@@ -433,8 +433,24 @@ function daysInMonth(ym){const[y,m]=ym.split('-').map(Number);return new Date(y,
 const fmtMD=ds=>{const p=(ds||'').split('-');return(+p[1])+'/'+(+p[2]);};
 const WD=['日','一','二','三','四','五','六'];
 function weekLabel(mon){const d=parseD(mon);return `${d.getMonth()+1}月第${Math.ceil((d.getDate()+ (new Date(d.getFullYear(),d.getMonth(),1).getDay()+6)%7 )/7)}周`;}
+function scheduleIntersects(t,start,end){
+  const s=t.start_date||t.end_date,e=t.end_date||t.start_date;
+  return !!s&&!!e&&s<=end&&e>=start;
+}
+function canInheritOrigin(t,scope){
+  if(!t||t.status==='done'||t.status==='archived')return false;
+  if(scope==='week')return scheduleIntersects(t,viewWeekMon,addDays(viewWeekMon,6));
+  if(scope==='month'){
+    const start=`${viewMonth}-01`,end=`${viewMonth}-${pad2(daysInMonth(viewMonth))}`;
+    return t.month===viewMonth||scheduleIntersects(t,start,end);
+  }
+  return false;
+}
 function inheritedOrigin(t,key){
-  let c=t;
+  if(t[key])return t[key];
+  const scope=key==='rollover_origin_week'?'week':'month';
+  if(!canInheritOrigin(t,scope))return null;
+  let c=t.parent_id==null?null:MAP.get(t.parent_id);
   while(c){if(c[key])return c[key];c=c.parent_id==null?null:MAP.get(c.parent_id);}
   return null;
 }
@@ -449,7 +465,8 @@ function originBadge(item,scope){
   if(scope==='day'&&raw)text=`来自 ${+raw.slice(5,7)}月${+raw.slice(8,10)}日`;
   if(scope==='week'&&raw)text=`来自 ${weekLabel(raw)}`;
   if(scope==='month'&&raw)text=`来自 ${+raw.slice(0,4)}年${+raw.slice(5,7)}月`;
-  return raw?`<span class="originchip" title="首次顺延来源：${esc(raw)}">${esc(text)}</span>`:'';
+  const title=scope==='week'&&raw?`${raw} 至 ${addDays(raw,6)}`:raw;
+  return raw?`<span class="originchip" title="首次顺延来源：${esc(title)}">${esc(text)}</span>`:'';
 }
 let toastTimer=null;
 function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2600);}
@@ -1815,7 +1832,7 @@ async function tryLogin(){
     const to=addDays(viewDay,1);
     const r=await mutate(()=>api('POST','/api/rollover',{scope:'day',from:viewDay,to}));
     if(r)toast(r.count?`已把 ${r.count} 条未完成待办顺延到 ${to} ✓`:'没有可顺延的未完成待办');});
-  $('rollPastDay').addEventListener('click',()=>runPastRollover($('rollPastDay'),'day',today(),()=>{viewDay=today();}));
+  $('rollPastDay').addEventListener('click',()=>{const target=today();return runPastRollover($('rollPastDay'),'day',target,()=>{viewDay=target;});});
   $('rollPastWeek').addEventListener('click',()=>{const mon=fmtDate(mondayOf(new Date()));return runPastRollover($('rollPastWeek'),'week',mon,()=>{viewWeekMon=mon;});});
   $('rollPastMonth').addEventListener('click',()=>{const ym=ymOf(today());return runPastRollover($('rollPastMonth'),'month',ym,()=>{viewMonth=ym;});});
   /* 创建矩阵 */

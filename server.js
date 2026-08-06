@@ -261,15 +261,22 @@ app.post('/api/rollover', (req, res) => {
           .filter(t => t.status === 'planned' && (t.month == null || t.month === from));
         for (const root of roots) {
           const ids = descendantIds(root.id);
-          db.prepare(`UPDATE tasks SET month=? WHERE id IN (${ids.map(() => '?').join(',')}) AND status='planned' AND (id=? OR month=?)`)
-            .run(to, ...ids, root.id, from);
+          const moving = db.prepare(`SELECT * FROM tasks WHERE id IN (${ids.map(() => '?').join(',')})
+            AND status='planned' AND (id=? OR month=?)`).all(...ids, root.id, from);
+          db.prepare(`UPDATE tasks SET month=?, rollover_origin_month=COALESCE(rollover_origin_month,?)
+            WHERE id IN (${ids.map(() => '?').join(',')}) AND status='planned' AND (id=? OR month=?)`)
+            .run(to, from, ...ids, root.id, from);
+          for (const before of moving) audit('task', before.id, 'rollover-month', before, getTask(before.id));
         }
         n = roots.length;
         audit('task', null, 'rollover-month', { from, to }, { count: n, roots: roots.map(t => t.id) });
       } else if (scope === 'day') {
-        const rows = db.prepare(`SELECT id FROM executions WHERE date=? AND done=0`).all(from);
-        db.prepare(`UPDATE executions SET date=? WHERE date=? AND done=0`).run(to, from);
+        const rows = db.prepare(`SELECT * FROM executions WHERE date=? AND done=0`).all(from);
+        db.prepare(`UPDATE executions SET date=?, rollover_origin_date=COALESCE(rollover_origin_date,date)
+          WHERE date=? AND done=0`).run(to, from);
         n = rows.length;
+        const afterExecution = db.prepare('SELECT * FROM executions WHERE id=?');
+        for (const before of rows) audit('execution', before.id, 'rollover-day', before, afterExecution.get(before.id));
         audit('execution', null, 'rollover-day', { from, to }, { count: n });
       } else throw new Error('bad scope');
     });
@@ -297,7 +304,6 @@ app.post('/api/rollover/past', (req, res) => {
 
         for (const group of groups) {
           roots.push(group.root.id);
-          origins.push(group.origin);
           const rootBefore = getTask(group.root.id);
           if (setRootOrigin.run(group.origin, group.root.id).changes) {
             audit('task', group.root.id, 'rollover-month-origin', rootBefore, getTask(group.root.id));
@@ -311,6 +317,11 @@ app.post('/api/rollover/past', (req, res) => {
               audit('task', task.id, 'rollover-month', before, getTask(task.id));
             }
           }
+          const representedIds = [...new Set([group.root.id, ...group.nodes.map(task => task.id)])];
+          const persisted = db.prepare(`SELECT rollover_origin_month origin FROM tasks
+            WHERE id IN (${representedIds.map(() => '?').join(',')})`).all(...representedIds)
+            .map(row => row.origin).filter(Boolean).sort();
+          origins.push(persisted[0]);
         }
         audit('task', null, 'rollover-past-month', { to }, { to, count, roots, origins });
       });
@@ -335,7 +346,6 @@ app.post('/api/rollover/past', (req, res) => {
 
         for (const group of groups) {
           roots.push(group.root.id);
-          origins.push(group.origin);
           const rootBefore = getTask(group.root.id);
           if (setRootOrigin.run(group.origin, group.root.id).changes) {
             audit('task', group.root.id, 'rollover-week-origin', rootBefore, getTask(group.root.id));
@@ -349,6 +359,11 @@ app.post('/api/rollover/past', (req, res) => {
               audit('task', task.id, 'rollover-week', before, getTask(task.id));
             }
           }
+          const representedIds = [...new Set([group.root.id, ...group.nodes.map(task => task.id)])];
+          const persisted = db.prepare(`SELECT rollover_origin_week origin FROM tasks
+            WHERE id IN (${representedIds.map(() => '?').join(',')})`).all(...representedIds)
+            .map(row => row.origin).filter(Boolean).sort();
+          origins.push(persisted[0]);
         }
         audit('task', null, 'rollover-past-week', { to }, { to, count, roots, origins });
       });
@@ -357,11 +372,13 @@ app.post('/api/rollover/past', (req, res) => {
     if (scope !== 'day') return res.status(400).json({ error: 'bad scope' });
 
     let count = 0, merged = 0;
+    const origins = [];
     tx(db, () => {
       const rows = db.prepare(`SELECT * FROM executions WHERE date<? AND done=0 ORDER BY date,id`).all(to);
       const targetByTask = new Map(db.prepare(`SELECT * FROM executions WHERE date=? AND done=0 AND task_id IS NOT NULL`).all(to)
         .map(x => [x.task_id, x]));
       const anyTargetForTask = db.prepare(`SELECT * FROM executions WHERE date=? AND task_id=?`);
+      const touched = new Set();
 
       for (const row of rows) {
         count++;
@@ -374,6 +391,7 @@ app.post('/api/rollover/past', (req, res) => {
           const origin = row.rollover_origin_date || row.date;
           db.prepare(`UPDATE executions SET date=?, rollover_origin_date=COALESCE(rollover_origin_date,date) WHERE id=?`).run(to, row.id);
           if (row.task_id != null) targetByTask.set(row.task_id, { ...row, date: to, rollover_origin_date: origin });
+          touched.add(row.id);
           continue;
         }
 
@@ -381,10 +399,18 @@ app.post('/api/rollover/past', (req, res) => {
         db.prepare(`UPDATE executions SET rollover_origin_date=? WHERE id=?`).run(origin, target.id);
         db.prepare(`DELETE FROM executions WHERE id=?`).run(row.id);
         target.rollover_origin_date = origin;
+        touched.add(target.id);
         merged++;
         audit('execution', target.id, 'rollover-day-merge', row, { removed_id: row.id, kept_id: target.id });
       }
-      audit('execution', null, 'rollover-past-day', { to }, { count, roots: [], merged });
+      if (touched.size) {
+        const ids = [...touched];
+        const persisted = db.prepare(`SELECT rollover_origin_date origin FROM executions
+          WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids)
+          .map(row => row.origin).filter(Boolean).sort();
+        origins.push(...new Set(persisted));
+      }
+      audit('execution', null, 'rollover-past-day', { to }, { count, roots: [], merged, origins });
     });
     res.json({ ok: true, count, roots: [], merged });
   } catch (e) { res.status(500).json({ error: String(e) }); }
