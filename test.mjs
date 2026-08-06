@@ -440,6 +440,176 @@ ok(weekTxAuditAfter.count === weekTxAuditBefore.count && weekTxAuditAfter.max_id
   '周顺延失败时逐项和批次 audit 均不留新增记录');
 tdb.exec('DROP TRIGGER fail_past_week_rollover');
 
+// ── 全量过往月任务簇顺延
+tdb.exec('DELETE FROM executions; DELETE FROM tasks');
+ok((await api('POST', '/api/rollover/past', { scope: 'month', to: '2026-8' })).status === 400 &&
+  (await api('POST', '/api/rollover/past', { scope: 'month', to: '2026-13' })).status === 400 &&
+  (await api('POST', '/api/rollover/past', { scope: 'month', to: '2026-02-01' })).status === 400,
+  '过往月顺延严格拒绝非 YYYY-MM 或非法月份');
+
+const mRoot = (await api('POST', '/api/task', {
+  name: '月末过往月簇', month: '2026-01', start: '2026-01-31', end: '2026-01-31'
+})).body.task;
+const mOpen = (await api('POST', '/api/task', {
+  name: '月末未完成子节点', parent_id: mRoot.id, start: '2026-01-31', end: '2026-01-31'
+})).body.task;
+const mDone = (await api('POST', '/api/task', {
+  name: '月已完成子节点', parent_id: mRoot.id, start: '2026-01-20', end: '2026-01-21'
+})).body.task;
+await api('POST', `/api/task/${mDone.id}/toggle-done`);
+const mDoneBefore = tdb.prepare('SELECT * FROM tasks WHERE id=?').get(mDone.id);
+
+const relativeRoot = (await api('POST', '/api/task', {
+  name: '月相对排期根', month: '2026-01', start: '2026-01-15', end: '2026-01-16'
+})).body.task;
+const relativeChild = (await api('POST', '/api/task', {
+  name: '月相对排期子', parent_id: relativeRoot.id, month: '2026-01', start: '2026-01-20', end: '2026-01-22'
+})).body.task;
+tdb.prepare('UPDATE tasks SET rollover_origin_month=?,rollover_origin_week=? WHERE id=?')
+  .run('2025-12', '2025-12-29', relativeChild.id);
+
+const intersectingMonth = (await api('POST', '/api/task', {
+  name: '与目标月相交', month: '2026-01', start: '2026-01-31', end: '2026-02-02'
+})).body.task;
+const currentMonth = (await api('POST', '/api/task', {
+  name: '目标月任务', month: '2026-02', start: '2026-02-10', end: '2026-02-11'
+})).body.task;
+const futureMonth = (await api('POST', '/api/task', {
+  name: '未来月任务', month: '2026-03', start: '2026-03-01', end: '2026-03-02'
+})).body.task;
+const barePool = (await api('POST', '/api/task', { name: '无日期普通池' })).body.task;
+const archivedMonth = (await api('POST', '/api/task', {
+  name: '已归档旧月', month: '2026-01', start: '2026-01-10', end: '2026-01-11'
+})).body.task;
+await api('DELETE', `/api/task/${archivedMonth.id}`);
+
+const currentParent = (await api('POST', '/api/task', {
+  name: '目标月父节点', month: '2026-02', start: '2026-02-05', end: '2026-02-06'
+})).body.task;
+const oldChildBranch = (await api('POST', '/api/task', {
+  name: '父节点下旧子分支', parent_id: currentParent.id, month: '2026-01', start: '2026-01-18', end: '2026-01-19'
+})).body.task;
+
+const monthSentinel = (await api('POST', '/api/execution', {
+  text: '月接口隔离未完成 sentinel', date: '2026-01-18'
+})).body.execution;
+tdb.prepare('UPDATE executions SET done=0,notion_id=?,rollover_origin_date=? WHERE id=?')
+  .run('month-sentinel-notion', '2025-12-31', monthSentinel.id);
+const monthExecutionFields = 'id,task_id,text,date,done,notion_id,rollover_origin_date';
+const monthSentinelBefore = tdb.prepare(`SELECT ${monthExecutionFields} FROM executions WHERE id=?`).get(monthSentinel.id);
+const monthAuditStart = tdb.prepare('SELECT COALESCE(MAX(id),0) id FROM audit').get().id;
+
+const pastMonth = await api('POST', '/api/rollover/past', { scope: 'month', to: '2026-02' });
+data = (await api('GET', '/api/data')).body;
+const expectedMonthRoots = [mRoot.id, relativeRoot.id, oldChildBranch.id];
+ok(pastMonth.status === 200 && pastMonth.body.count === 5 && pastMonth.body.merged === 0 &&
+  pastMonth.body.roots?.length === expectedMonthRoots.length &&
+  expectedMonthRoots.every(id => pastMonth.body.roots.includes(id)),
+  '过往月任务簇返回实际移动节点数、簇根和统一 merged');
+ok(find(mRoot.id).start_date === '2026-02-28' && find(mRoot.id).end_date === '2026-02-28' &&
+  find(mOpen.id).start_date === '2026-02-28' && find(mOpen.id).end_date === '2026-02-28',
+  '月末锚点 1/31 夹到 2/28 且同簇使用同一 deltaDays');
+ok(find(relativeRoot.id).start_date === '2026-02-15' && find(relativeRoot.id).end_date === '2026-02-16' &&
+  find(relativeChild.id).start_date === '2026-02-20' && find(relativeChild.id).end_date === '2026-02-22',
+  '月簇按天整体平移并保持节点时长与树内相对位置');
+ok(find(mRoot.id).month === '2026-02' && find(mOpen.id).month === '2026-02' &&
+  find(relativeRoot.id).month === '2026-02' && find(relativeChild.id).month === '2026-02' &&
+  find(oldChildBranch.id).month === '2026-02',
+  '每个实际移动的月节点归属目标月');
+ok(find(mRoot.id).rollover_origin_month === '2026-01' && find(mOpen.id).rollover_origin_month === '2026-01' &&
+  find(relativeRoot.id).rollover_origin_month === '2026-01' &&
+  find(relativeChild.id).rollover_origin_month === '2025-12' &&
+  find(relativeChild.id).rollover_origin_week === '2025-12-29',
+  '月簇根与移动节点记录首次来源月且不覆盖已有来源周/月');
+ok(find(mDone.id).start_date === mDoneBefore.start_date && find(mDone.id).end_date === mDoneBefore.end_date &&
+  find(mDone.id).done_at === mDoneBefore.done_at && find(mDone.id).month === mDoneBefore.month,
+  '部分完成父簇只顺延开放节点并原地保留完成后代与 done_at');
+ok(find(intersectingMonth.id).start_date === '2026-01-31' && find(intersectingMonth.id).month === '2026-01' &&
+  find(currentMonth.id).start_date === '2026-02-10' && find(futureMonth.id).start_date === '2026-03-01' &&
+  find(barePool.id).month == null && find(barePool.id).rollover_origin_month == null,
+  '与目标月相交、当前未来和无日期普通池节点不移动');
+const archivedMonthAfter = (await api('GET', '/api/data?archived=1')).body.tasks.find(t => t.id === archivedMonth.id);
+ok(archivedMonthAfter?.start_date === '2026-01-10' && archivedMonthAfter.month === '2026-01' &&
+  archivedMonthAfter.rollover_origin_month == null,
+  'archived 旧月节点不移动');
+ok(find(currentParent.id).month === '2026-02' && find(currentParent.id).start_date === '2026-02-05' &&
+  find(currentParent.id).rollover_origin_month == null &&
+  find(oldChildBranch.id).start_date === '2026-02-18' && find(oldChildBranch.id).end_date === '2026-02-19',
+  '当前月父节点不动且其旧子分支独立顺延');
+const monthSentinelAfter = tdb.prepare(`SELECT ${monthExecutionFields} FROM executions WHERE id=?`).get(monthSentinel.id);
+ok(JSON.stringify(monthSentinelAfter) === JSON.stringify(monthSentinelBefore),
+  '月顺延不修改旧日未完成 execution 的完整关键字段');
+
+const monthAudits = tdb.prepare('SELECT entity_id,action,before_json,after_json FROM audit WHERE id>? ORDER BY id')
+  .all(monthAuditStart).map(row => ({
+    entity_id: row.entity_id,
+    action: row.action,
+    before: row.before_json ? JSON.parse(row.before_json) : null,
+    after: row.after_json ? JSON.parse(row.after_json) : null
+  }));
+const monthMovedIds = [mRoot.id, mOpen.id, relativeRoot.id, relativeChild.id, oldChildBranch.id];
+ok(monthMovedIds.every(id => monthAudits.some(row => row.entity_id === id && row.action === 'rollover-month' &&
+  row.before && row.after && (row.before.start_date !== row.after.start_date || row.before.month !== row.after.month))),
+  '月顺延逐项审计每个实际移动节点');
+ok(monthAudits.some(row => row.entity_id == null && row.action === 'rollover-past-month' &&
+  row.after?.to === '2026-02' && row.after.count === 5 &&
+  row.after.roots?.length === expectedMonthRoots.length &&
+  expectedMonthRoots.every(id => row.after.roots.includes(id)) &&
+  row.after.origins?.length === expectedMonthRoots.length && row.after.origins.every(x => x === '2026-01')),
+  '月顺延批次审计记录 to/count/roots/origins');
+const pastMonthAgain = await api('POST', '/api/rollover/past', { scope: 'month', to: '2026-02' });
+ok(pastMonthAgain.status === 200 && pastMonthAgain.body.count === 0 &&
+  pastMonthAgain.body.roots?.length === 0 && pastMonthAgain.body.merged === 0,
+  '重复顺延同一目标月返回空结果');
+
+tdb.exec('DELETE FROM executions; DELETE FROM tasks');
+const bareMonth = (await api('POST', '/api/task', { name: '旧月无日期', month: '2026-06' })).body.task;
+const bareMonthRoll = await api('POST', '/api/rollover/past', { scope: 'month', to: '2026-08' });
+data = (await api('GET', '/api/data')).body;
+ok(bareMonthRoll.status === 200 && bareMonthRoll.body.count === 1 &&
+  JSON.stringify(bareMonthRoll.body.roots) === JSON.stringify([bareMonth.id]) &&
+  find(bareMonth.id).month === '2026-08' && find(bareMonth.id).rollover_origin_month === '2026-06',
+  '无日期旧 month 更新归属并记录首次来源月');
+
+tdb.exec('DELETE FROM tasks');
+const repeatedRoot = (await api('POST', '/api/task', { name: '多次月顺延簇' })).body.task;
+const repeatedTask = (await api('POST', '/api/task', {
+  name: '多次月顺延节点', parent_id: repeatedRoot.id, month: '2026-07', start: '2026-07-15', end: '2026-07-16'
+})).body.task;
+const repeatedMonthFirst = await api('POST', '/api/rollover/past', { scope: 'month', to: '2026-08' });
+const repeatedMonthSecond = await api('POST', '/api/rollover/past', { scope: 'month', to: '2026-09' });
+data = (await api('GET', '/api/data')).body;
+ok(repeatedMonthFirst.body.count === 1 && repeatedMonthSecond.body.count === 1 &&
+  find(repeatedTask.id).start_date === '2026-09-15' && find(repeatedTask.id).end_date === '2026-09-16' &&
+  find(repeatedRoot.id).rollover_origin_month === '2026-07' &&
+  find(repeatedTask.id).rollover_origin_month === '2026-07' && find(repeatedTask.id).month === '2026-09',
+  '多次月顺延继续平移排期且保留最早原始月');
+
+tdb.exec('DELETE FROM tasks');
+const monthTxRoot = (await api('POST', '/api/task', { name: '月事务簇' })).body.task;
+const monthTxFirst = (await api('POST', '/api/task', {
+  name: '月事务节点一', parent_id: monthTxRoot.id, month: '2026-01', start: '2026-01-10', end: '2026-01-11'
+})).body.task;
+const monthTxSecond = (await api('POST', '/api/task', {
+  name: '月事务节点二', parent_id: monthTxRoot.id, month: '2026-01', start: '2026-01-20', end: '2026-01-21'
+})).body.task;
+tdb.exec(`CREATE TRIGGER fail_past_month_rollover BEFORE UPDATE OF start_date ON tasks
+  WHEN OLD.id=${monthTxSecond.id} BEGIN SELECT RAISE(ABORT,'test month rollback'); END`);
+const monthTxAuditBefore = tdb.prepare('SELECT COUNT(*) count,COALESCE(MAX(id),0) max_id FROM audit').get();
+const failedMonthTx = await api('POST', '/api/rollover/past', { scope: 'month', to: '2026-02' });
+const monthRolledBack = tdb.prepare('SELECT * FROM tasks WHERE id IN (?,?,?) ORDER BY id')
+  .all(monthTxRoot.id, monthTxFirst.id, monthTxSecond.id);
+const monthTxAuditAfter = tdb.prepare('SELECT COUNT(*) count,COALESCE(MAX(id),0) max_id FROM audit').get();
+ok(failedMonthTx.status === 500 && monthRolledBack[0]?.rollover_origin_month == null &&
+  monthRolledBack[1]?.start_date === '2026-01-10' && monthRolledBack[1]?.month === '2026-01' &&
+  monthRolledBack[1]?.rollover_origin_month == null &&
+  monthRolledBack[2]?.start_date === '2026-01-20' && monthRolledBack[2]?.month === '2026-01' &&
+  monthRolledBack[2]?.rollover_origin_month == null,
+  '月顺延任一节点失败时整批任务与来源月事务回滚');
+ok(monthTxAuditAfter.count === monthTxAuditBefore.count && monthTxAuditAfter.max_id === monthTxAuditBefore.max_id,
+  '月顺延失败时逐项和批次 audit 均不留新增记录');
+tdb.exec('DROP TRIGGER fail_past_month_rollover');
+
 // ── 审计
 const auditCount = tdb.prepare('SELECT COUNT(*) c FROM audit').get().c;
 ok(auditCount > 20, `审计日志已记录(${auditCount}条)`);

@@ -281,8 +281,43 @@ app.post('/api/rollover/past', (req, res) => {
   try {
     const { scope, to } = req.body || {};
     if (!validateTarget(scope, to)) return res.status(400).json({ error: 'invalid target' });
+    if (scope === 'month') {
+      let count = 0, merged = 0;
+      const roots = [], origins = [];
+      tx(db, () => {
+        const rows = db.prepare(`SELECT * FROM tasks WHERE status!='archived'`).all();
+        const groups = selectPastRoots(rows, 'month', to);
+        const setRootOrigin = db.prepare(`UPDATE tasks SET rollover_origin_month=?
+          WHERE id=? AND rollover_origin_month IS NULL`);
+        const moveTask = db.prepare(`UPDATE tasks SET
+          start_date=?, end_date=?,
+          rollover_origin_month=COALESCE(rollover_origin_month,?),
+          month=?
+          WHERE id=? AND status!='done' AND status!='archived'`);
+
+        for (const group of groups) {
+          roots.push(group.root.id);
+          origins.push(group.origin);
+          const rootBefore = getTask(group.root.id);
+          if (setRootOrigin.run(group.origin, group.root.id).changes) {
+            audit('task', group.root.id, 'rollover-month-origin', rootBefore, getTask(group.root.id));
+          }
+          for (const task of group.nodes) {
+            const before = getTask(task.id);
+            const start = task.start_date == null ? null : addDaysIso(task.start_date, group.deltaDays);
+            const end = task.end_date == null ? null : addDaysIso(task.end_date, group.deltaDays);
+            if (moveTask.run(start, end, group.origin, to, task.id).changes) {
+              count++;
+              audit('task', task.id, 'rollover-month', before, getTask(task.id));
+            }
+          }
+        }
+        audit('task', null, 'rollover-past-month', { to }, { to, count, roots, origins });
+      });
+      return res.json({ ok: true, count, roots, merged });
+    }
     if (scope === 'week') {
-      let count = 0;
+      let count = 0, merged = 0;
       const roots = [], origins = [];
       tx(db, () => {
         const rows = db.prepare(`SELECT * FROM tasks WHERE status!='archived'`).all();
@@ -317,7 +352,7 @@ app.post('/api/rollover/past', (req, res) => {
         }
         audit('task', null, 'rollover-past-week', { to }, { to, count, roots, origins });
       });
-      return res.json({ ok: true, count, roots });
+      return res.json({ ok: true, count, roots, merged });
     }
     if (scope !== 'day') return res.status(400).json({ error: 'bad scope' });
 
