@@ -51,6 +51,54 @@ for (const suf of ['', '-wal', '-shm']) { try { fs.unlinkSync(legacyPath + suf);
 let pass = 0, fail = 0;
 const ok = (c, m) => c ? (pass++, console.log('  ✓', m)) : (fail++, console.log('  ✗', m));
 
+// ── Task 6 前端静态契约（真实浏览器行为另由 Playwright CLI 验收）
+const frontHtml = fs.readFileSync(path.join(HERE, 'public', 'index.html'), 'utf8');
+const frontSection = (from, to) => {
+  const start = frontHtml.indexOf(from);
+  const end = start < 0 ? -1 : frontHtml.indexOf(to, start + from.length);
+  return start < 0 ? '' : frontHtml.slice(start, end < 0 ? undefined : end);
+};
+ok([
+  ['rollPastMonth', '过往未完成 → 本月'],
+  ['rollPastWeek', '过往未完成 → 本周'],
+  ['rollPastDay', '过往未完成 → 今天'],
+  ['rollMonth', '未完成顺延到下月 ⤳'],
+  ['rollDay', '未完成顺延明天 ⤳']
+].every(([id, label]) => new RegExp(`<button[^>]+id="${id}"[^>]*>${label}</button>`).test(frontHtml)),
+'前端保留两个旧顺延按钮并提供三个全量顺延按钮');
+ok(frontHtml.includes('.originchip{') && frontHtml.includes('.rollbtn.primary{') &&
+  frontHtml.includes('.rollbtn:disabled{'), '来源徽章、主按钮与请求中禁用样式存在');
+
+const originHelpers = frontSection('function inheritedOrigin(', '/* ================= API ================= */');
+ok(originHelpers.includes("inheritedOrigin(item,'rollover_origin_week')") &&
+  originHelpers.includes("inheritedOrigin(item,'rollover_origin_month')") &&
+  originHelpers.includes('item.rollover_origin_date') && originHelpers.includes('${esc(raw)}') &&
+  originHelpers.includes('来自 ${weekLabel(raw)}'), '来源助手支持祖先最初周/月、执行最初日期与安全 title');
+
+const planRender = frontSection('function renderPlanPool(', 'function renderDoneCards(');
+const doneRender = frontSection('function renderDoneCards(', 'function monthRelevant(');
+const outlineRender = frontSection('function renderOutline(', '/* ================= 甘特');
+const ganttRender = frontSection('function renderGantt(', '/* ================= 周页');
+const weekRender = frontSection('function renderWeek(', '/* ================= 日页');
+const dayRender = frontSection('function renderDay(', '/* ================= 挂靠');
+ok(planRender.includes("originBadge(t,'month')") && planRender.includes("treeRow(k,1,'month')") &&
+  doneRender.includes("originBadge(t,'month')") &&
+  outlineRender.includes("originBadge(t,'month')") &&
+  ganttRender.includes("originBadge(t,isMonth?'month':'week')") &&
+  weekRender.includes("originBadge(t,'week')") && dayRender.includes("originBadge(e,'day')"),
+'来源徽章仅接入月规划/完成/大纲、月周甘特、周列表与日执行区域');
+ok(!frontSection('function renderYear(', 'function renderMonth(').includes('originBadge(') &&
+  !frontSection('function renderPool(', 'function renderPlanPool(').includes('originBadge('),
+'年度与任务池不渲染来源徽章');
+
+const rolloverAction = frontSection('async function runPastRollover(', '/* =================');
+const rolloverBindings = frontSection("$('rollPastDay').addEventListener", '/* 创建矩阵 */');
+ok(rolloverAction.includes("api('POST','/api/rollover/past',{scope,to})") &&
+  rolloverAction.includes('if(!confirm(') && rolloverAction.includes('btn.disabled=true') &&
+  rolloverAction.includes('await reload()') && rolloverAction.includes('finally{btn.disabled=false;}') &&
+  rolloverBindings.includes("'day',today()") && rolloverBindings.includes("'week',mon") &&
+  rolloverBindings.includes("'month',ym"), '全量顺延确认、精确 payload、忙碌态、重载与三类绑定完整');
+
 // ── 过往任务顺延：日期平移与任务簇选择纯函数
 let rollHelp = {};
 try { rollHelp = require('./rollover.js'); } catch (_) {}

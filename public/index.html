@@ -43,6 +43,8 @@
   .rollbtn{padding:4px 12px;border:1px solid var(--border);border-radius:14px;background:#fff;
     font-size:12px;color:var(--text2);cursor:pointer;font-weight:500;transition:all .12s}
   .rollbtn:hover{background:#fdf3e7;border-color:#e8b27a;color:#b3742f}
+  .rollbtn.primary{background:#eef6ff;border-color:#bfd7f3;color:#2f6da8;font-weight:650}
+  .rollbtn:disabled{opacity:.45;cursor:wait}
   h2{font-size:16px;font-weight:650;margin:28px 0 13px;display:flex;align-items:center;gap:8px}
   h2:first-of-type{margin-top:6px}
   h2 .bar{width:4px;height:15px;border-radius:2px;background:var(--blue)}
@@ -133,6 +135,7 @@
   .nm{font-size:11px;color:#2f6bb3;background:#e3edf9;padding:0 8px;border-radius:10px;flex:none;line-height:18px}
   .nm.full{color:#2e7d4f;background:#e2f3e8}
   .datechip{font-size:11px;color:var(--text3);background:#f4f3f1;padding:0 8px;border-radius:10px;flex:none;line-height:18px}
+  .originchip{font-size:10.5px;line-height:18px;padding:0 7px;border-radius:9px;background:#f0f1f3;color:#6b7280;white-space:nowrap;flex:none}
   .mrow .ops{display:flex;gap:5px;flex:none;opacity:.6;transition:opacity .12s}
   .mrow:hover .ops{opacity:1}
   .mrow.schedrow{background:#f5f1ea}
@@ -152,7 +155,7 @@
   /* 甘特 */
   .mgantt{padding:2px 4px;overflow:visible}
   .mg-row{display:grid;grid-template-columns:235px 1fr;align-items:center;min-height:30px}
-  @media(max-width:720px){.mg-row{grid-template-columns:110px 1fr}}
+  @media(max-width:720px){.mg-row{grid-template-columns:180px 1fr}}
   .mg-label{display:flex;align-items:center;padding-right:10px;font-size:12.5px;color:var(--text2);overflow:hidden;white-space:nowrap}
   .mg-label .lt{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
   .mg-label .lux{flex:none;margin-right:2px;width:16px;height:16px;line-height:14px;text-align:center;border-radius:50%;
@@ -359,7 +362,7 @@
         <div class="card olwrap" id="outline"></div>
       </div>
       <h2><span class="bar" style="background:var(--orange)"></span>本月规划池<span class="cnt" id="planCnt"></span>
-        <span class="hbtns"><button class="rollbtn" id="rollMonth">未完成顺延到下月 ⤳</button></span></h2>
+        <span class="hbtns"><button class="rollbtn primary" id="rollPastMonth">过往未完成 → 本月</button><button class="rollbtn" id="rollMonth">未完成顺延到下月 ⤳</button></span></h2>
       <div class="card mlist" id="planList"></div>
       <h2><span class="bar" style="background:var(--gray)"></span>任务池<span class="cnt" id="poolCnt"></span></h2>
       <div class="card pool">
@@ -381,7 +384,7 @@
       </div>
       <h2><span class="bar"></span>本周甘特<span class="cnt" id="wgCnt"></span></h2>
       <div class="card" style="padding:14px 12px"><div id="weekGantt" class="mgantt"></div></div>
-      <h2><span class="bar" style="background:var(--green)"></span>本周任务</h2>
+      <h2><span class="bar" style="background:var(--green)"></span>本周任务<span class="hbtns"><button class="rollbtn primary" id="rollPastWeek">过往未完成 → 本周</button></span></h2>
       <div class="card wcol"><h3 id="wkh">本周</h3><div id="wkList"></div></div>
     </section>
     <!-- 日 -->
@@ -393,7 +396,7 @@
       <div class="grid2">
         <div class="card wcol">
           <h3>当日待办<span class="rng" id="dCnt"></span>
-            <span style="margin-left:auto"><button class="rollbtn" id="rollDay">未完成顺延明天 ⤳</button></span></h3>
+            <span style="margin-left:auto;display:flex;gap:8px"><button class="rollbtn primary" id="rollPastDay">过往未完成 → 今天</button><button class="rollbtn" id="rollDay">未完成顺延明天 ⤳</button></span></h3>
           <div class="addline" style="margin:2px 0 10px"><input id="ndText" placeholder="＋ 记一条今日待办(琐事不入任务树,可升格)"><button id="ndOk">添加</button></div>
           <div id="dayList"></div>
         </div>
@@ -425,6 +428,24 @@ function daysInMonth(ym){const[y,m]=ym.split('-').map(Number);return new Date(y,
 const fmtMD=ds=>{const p=(ds||'').split('-');return(+p[1])+'/'+(+p[2]);};
 const WD=['日','一','二','三','四','五','六'];
 function weekLabel(mon){const d=parseD(mon);return `${d.getMonth()+1}月第${Math.ceil((d.getDate()+ (new Date(d.getFullYear(),d.getMonth(),1).getDay()+6)%7 )/7)}周`;}
+function inheritedOrigin(t,key){
+  let c=t;
+  while(c){if(c[key])return c[key];c=c.parent_id==null?null:MAP.get(c.parent_id);}
+  return null;
+}
+function originOf(item,scope){
+  if(scope==='day')return item.rollover_origin_date||null;
+  if(scope==='week')return inheritedOrigin(item,'rollover_origin_week');
+  if(scope==='month')return inheritedOrigin(item,'rollover_origin_month');
+  return null;
+}
+function originBadge(item,scope){
+  const raw=originOf(item,scope);let text='';
+  if(scope==='day'&&raw)text=`来自 ${+raw.slice(5,7)}月${+raw.slice(8,10)}日`;
+  if(scope==='week'&&raw)text=`来自 ${weekLabel(raw)}`;
+  if(scope==='month'&&raw)text=`来自 ${+raw.slice(0,4)}年${+raw.slice(5,7)}月`;
+  return raw?`<span class="originchip" title="首次顺延来源：${esc(raw)}">${esc(text)}</span>`:'';
+}
 let toastTimer=null;
 function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2600);}
 
@@ -463,6 +484,17 @@ async function mutate(fn,okMsg){
     if(e.status===409)toast('该任务今天已经在待办里了');
     else toast('操作失败:'+e.message);
     try{await reload();}catch(_){}}
+}
+async function runPastRollover(btn,scope,to,onTarget){
+  const names={day:'今天',week:'本周',month:'本月'};
+  if(!confirm(`把全部过往未完成项顺延到${names[scope]}？\n已完成历史不会移动。`))return;
+  btn.disabled=true;
+  try{
+    const r=await api('POST','/api/rollover/past',{scope,to});
+    onTarget();await reload();
+    toast(r.count?`已顺延 ${r.count} 项到${names[scope]} ✓`:'没有需要顺延的过往任务');
+  }catch(e){toast('顺延失败:'+e.message);await reload().catch(()=>{});}
+  finally{btn.disabled=false;}
 }
 const patchTask=(id,f,msg)=>mutate(()=>api('PATCH','/api/task/'+id,f),msg);
 const createTask=(f,msg)=>mutate(()=>api('POST','/api/task',f),msg||'已创建 ✓');
@@ -534,16 +566,16 @@ function inlineEdit(el,cur,commit){
 
 /* ===== 共享子树组件:递归行(整行点击展开)+常驻添加行+统一绑定(编辑弹窗/归档/加子) ===== */
 const treeAddRow=(t,d)=>`<div class="subinp" data-psubinp="${t.id}" style="margin:2px 0 10px ${d*22+30}px"><input placeholder="添加一个子任务,回车确认…"><button>添加</button></div>`;
-const treeRow=(t,d)=>{
+const treeRow=(t,d,scope=null)=>{
   const open=expanded.has(t.id);
   let h=`<div class="mrow" data-prow="${t.id}" style="padding-left:${d*22}px;cursor:pointer;min-height:38px" title="点击展开/收起">
     <span class="mg-caret${open?' open':''}">▸</span>
     ${cbHtml(t,'tcb')}${nmBadge(t)}
-    <span class="name">${esc(t.name)}</span>
+    <span class="name">${esc(t.name)}</span>${scope?originBadge(t,scope):''}
     ${t.start_date?`<span class="datechip">${fmtMD(t.start_date)}→${fmtMD(t.end_date)}</span>`:''}
     <span class="ops"><span class="ab ed" data-ed2="${t.id}" title="编辑(名称/标签/优先级)">✎</span><span class="ab rm" data-parc="${t.id}" title="归档删除(整棵子树)">×</span></span>
   </div>`;
-  if(open){h+=kidsOf(t.id).map(k=>treeRow(k,d+1)).join('');h+=treeAddRow(t,d+1);}
+  if(open){h+=kidsOf(t.id).map(k=>treeRow(k,d+1,scope)).join('');h+=treeAddRow(t,d+1);}
   return h;};
 function bindTreeCommon(root,rerender){
   root.querySelectorAll('.mrow[data-prow]').forEach(row=>row.addEventListener('click',e=>{
@@ -857,7 +889,7 @@ function renderPlanPool(){
     let h=`<div class="mrow${er?' schedrow':''}" data-tid="${t.id}" data-prow="${t.id}" draggable="true" style="cursor:pointer" title="点击展开/收起 · 拖到甘特排期 · 上下拖到别的行=排序">
       <span class="mg-caret${open?' open':''}">▸</span>
       ${cbHtml(t,'tcb')}${nmBadge(t)}
-      <span class="name pname">${esc(t.name)}</span>
+      <span class="name pname">${esc(t.name)}</span>${originBadge(t,'month')}
       ${t.status==='goal'?'<span class="badge Px" title="在目标区,还未放行进池">目标区</span>':t.status==='pool'?'<span class="badge" style="background:#e3edf9;color:#2f6bb3" title="在任务池,还未排入本月">在池</span>':''}
       ${cr?`<span class="crumb" title="${esc(cr)}">${esc(cr)}</span>`:''}
       ${t.parent_id?tagBadge(t):tagBadge(t,`data-ptag="${t.id}"`)}
@@ -872,7 +904,7 @@ function renderPlanPool(){
             :`<span class="chipbtn" data-pin2="${t.id}" title="正式排入本月规划">→ 月</span>`)}
         <span class="ab rm" data-parc="${t.id}" title="归档删除(整棵子树)">×</span>
       </span></div>`;
-    if(open){h+=kidsOf(t.id).map(k=>treeRow(k,1)).join('');h+=treeAddRow(t,1);}
+    if(open){h+=kidsOf(t.id).map(k=>treeRow(k,1,'month')).join('');h+=treeAddRow(t,1);}
     return h;
   }).join('')||'<div class="mrow" style="color:var(--text3);font-size:13px">本月规划池是空的:从任务池「→月」排入,或下方直接添加</div>';
   $('planList').insertAdjacentHTML('beforeend',
@@ -928,6 +960,7 @@ function renderDoneCards(){
   $('doneCards').innerHTML=list.map(t=>{
     const cr=crumbs(t);
     return `<div class="pcard" style="background:#f6f5f3"><span class="pc-t" style="color:var(--text3)" title="${esc(t.name)} · 完成于 ${t.done_at||''}">${esc(t.name)}</span>
+     ${originBadge(t,'month')}
      ${cr?`<span class="crumb" title="${esc(cr)}">${esc(cr)}</span>`:''}
      ${t.leaves>1?`<span class="nm full">${t.done_leaves}/${t.leaves}</span>`:''}
      <span class="datechip">✓ ${fmtMD(t.done_at)}</span>
@@ -962,7 +995,7 @@ function renderOutline(){
     return `<div class="olrow${t.status==='done'?' done':''}" style="padding-left:${d*22}px;cursor:pointer" data-olid="${t.id}" title="点击展开/收起">
       <span class="mg-caret${expanded.has(t.id)?' open':''}">▸</span>
       ${cbHtml(t,'tcb')}${nmBadge(t)}
-      <span class="name olname">${esc(t.name)}</span>
+      <span class="name olname">${esc(t.name)}</span>${originBadge(t,'month')}
       ${t.month?`<span class="datechip">📌${t.month}</span>`:''}
       ${t.start_date?`<span class="datechip">${fmtMD(t.start_date)}→${fmtMD(t.end_date)}</span>`:''}
       ${d===0?tagBadge(t):''}
@@ -1076,7 +1109,7 @@ function renderGantt(containerId,mode){
     const luxT=t.start_date?'取消排期(退回规划池)':(er&&er.env?'取消整棵子树的排期':'');
     return`<div class="mg-row${open?' openrow':''}${t.status==='done'?' rowdone':''}" data-rowtid="${t.id}" data-depth="${d}">
       <div class="mg-label${kids?' haskids':''}" data-lab="${t.id}" draggable="true" style="padding-left:${d*16}px" title="${esc(t.name)}${kids?' · 点击展开子任务':''} · 上下拖动调整顺序">
-        ${luxT?`<span class="lux" data-lux="${t.id}" title="${luxT}">×</span>`:'<span class="lux" style="visibility:hidden">×</span>'}${caret}${cbHtml(t,'gcb')}<span class="lt">${esc(t.name)}</span>${nmBadge(t)}
+        ${luxT?`<span class="lux" data-lux="${t.id}" title="${luxT}">×</span>`:'<span class="lux" style="visibility:hidden">×</span>'}${caret}${cbHtml(t,'gcb')}<span class="lt">${esc(t.name)}</span>${nmBadge(t)}${originBadge(t,isMonth?'month':'week')}
       </div><div class="mg-track">${bar}</div></div>`;
   }).join('');
   html+=`<div class="mg-row" style="min-height:38px"><div class="mg-label"></div><div class="mg-track mg-drop">${todayLine}<span class="mg-drophint">${isMonth?'⬆ 从"本月规划池"拖任务到此排期(默认3天,可拖动调整)':'⬇ 从下方"本周任务"拖任务名到此排期/改期'}</span></div></div>`;
@@ -1234,7 +1267,7 @@ function renderWeek(){
     let h=`<div class="dayrow${t.status==='done'?' done':''}" data-wrow="${t.id}" style="padding-left:${d*20}px;cursor:pointer" title="点击展开/收起">
       <span class="mg-caret${open?' open':''}">▸</span>
       ${cbHtml(t,'tcb')}${nmBadge(t)}
-      <span class="name wdrag" data-wdrag="${t.id}" draggable="true" title="${esc(t.name)} · 点击展开 · 拖到上方周甘特排期/改期">${esc(t.name)}</span>
+      <span class="name wdrag" data-wdrag="${t.id}" draggable="true" title="${esc(t.name)} · 点击展开 · 拖到上方周甘特排期/改期">${esc(t.name)}</span>${originBadge(t,'week')}
       ${cr?`<span class="crumb" title="${esc(cr)}">${esc(cr)}</span>`:''}
       ${t.start_date?`<span class="datechip">${fmtMD(t.start_date)}→${fmtMD(t.end_date)}</span>`:''}
       ${d===0?srcBadge(t):''}
@@ -1275,7 +1308,7 @@ function renderDay(){
     const cr=t?crumbs(t):'';
     return`<div class="dayrow${e.done?' done':''}">
       <input type="checkbox" class="tcb" data-ex="${e.id}" ${e.done?'checked':''}>
-      <span class="name">${esc(nm)}</span>
+      <span class="name">${esc(nm)}</span>${originBadge(e,'day')}
       ${cr?`<span class="crumb" title="${esc(cr)}">${esc(cr)}</span>`:''}
       ${t?srcBadge(t):`<span class="srcbadge free">${e.task_id?'任务':'自由'}</span>`}
       <span class="ops">
@@ -1776,6 +1809,9 @@ async function tryLogin(){
     const to=addDays(viewDay,1);
     const r=await mutate(()=>api('POST','/api/rollover',{scope:'day',from:viewDay,to}));
     if(r)toast(r.count?`已把 ${r.count} 条未完成待办顺延到 ${to} ✓`:'没有可顺延的未完成待办');});
+  $('rollPastDay').addEventListener('click',()=>runPastRollover($('rollPastDay'),'day',today(),()=>{viewDay=today();}));
+  $('rollPastWeek').addEventListener('click',()=>{const mon=fmtDate(mondayOf(new Date()));return runPastRollover($('rollPastWeek'),'week',mon,()=>{viewWeekMon=mon;});});
+  $('rollPastMonth').addEventListener('click',()=>{const ym=ymOf(today());return runPastRollover($('rollPastMonth'),'month',ym,()=>{viewMonth=ym;});});
   /* 创建矩阵 */
   $('addGoalBtn').addEventListener('click',()=>{const b=$('goalAddBox');b.style.display=b.style.display==='none'?'block':'none';$('ngName').focus();});
   $('ngOk').addEventListener('click',()=>{
