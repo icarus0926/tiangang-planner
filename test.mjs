@@ -146,7 +146,9 @@ const ex1 = (await api('POST', '/api/execution', { text: '自由待办', date: '
 ok(ex1.text === '自由待办' && !ex1.task_id, '自由文本待办');
 const ex2 = (await api('POST', '/api/execution', { task_id: F.id, date: '2026-07-15' })).body.execution;
 data = (await api('GET', '/api/data')).body;
-ok(Object.hasOwn(find(F.id), 'rollover_origin_week') && Object.hasOwn(ex2, 'rollover_origin_date'),
+const dataExecution = data.executions.find(execution => execution.id === ex2.id);
+ok(Object.hasOwn(find(F.id), 'rollover_origin_week') &&
+  dataExecution && Object.hasOwn(dataExecution, 'rollover_origin_date'),
   'GET /api/data returns rollover provenance fields');
 ok(ex2.task_name === 'F', '任务关联待办带任务名');
 ok((await api('POST', '/api/execution', { task_id: F.id, date: '2026-07-15' })).status === 409, '同任务同日查重 409');
