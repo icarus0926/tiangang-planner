@@ -77,6 +77,13 @@ const barePoolChild = [
 ];
 const barePoolPicked = rollHelp.selectPastRoots?.(barePoolChild,'month','2026-08') || [];
 ok(barePoolPicked[0]?.nodes.map(x=>x.id).join(',') === '7', '过期父节点不带动无日期普通池子节点');
+const crossingParent = [
+  {id:9,parent_id:null,status:'planned',month:'2026-07',start_date:'2026-07-31',end_date:'2026-08-02'},
+  {id:10,parent_id:9,status:'planned',month:null,start_date:'2026-07-20',end_date:'2026-07-21'}
+];
+const crossingPicked = rollHelp.selectPastRoots?.(crossingParent,'month','2026-08') || [];
+ok(crossingPicked.length === 1 && crossingPicked[0].root.id === 10 &&
+  crossingPicked[0].nodes.map(x=>x.id).join(',') === '10', '跨入目标月的父节点不移动，过期子分支独立选择');
 
 // ── 任务池分类整块排序(纯函数,浏览器与测试共用)
 ok(legacyMigrationPassed, 'legacy db migration adds rollover provenance columns');

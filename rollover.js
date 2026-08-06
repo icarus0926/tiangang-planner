@@ -60,6 +60,7 @@ function selectPastRoots(tasks, scope, to) {
   const targetMonth = scope === 'month' ? to : to.slice(0, 7);
   const targetEnd = scope === 'week' ? addDaysIso(to, 6) : null;
   const isPast = task => {
+    if (scope === 'month' && hasCurrentWindowDate(task)) return false;
     const endIsPast = isIsoDate(task.end_date) && task.end_date < (scope === 'week' ? to : `${to}-01`);
     return scope === 'week'
       ? endIsPast
