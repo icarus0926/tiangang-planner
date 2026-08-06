@@ -51,6 +51,21 @@ for (const suf of ['', '-wal', '-shm']) { try { fs.unlinkSync(legacyPath + suf);
 let pass = 0, fail = 0;
 const ok = (c, m) => c ? (pass++, console.log('  ✓', m)) : (fail++, console.log('  ✗', m));
 
+// ── 过往任务顺延：日期平移与任务簇选择纯函数
+let rollHelp = {};
+try { rollHelp = require('./rollover.js'); } catch (_) {}
+const sample = [
+  {id:1,parent_id:null,status:'planned',month:null,start_date:null,end_date:null},
+  {id:2,parent_id:1,status:'planned',month:null,start_date:'2026-07-22',end_date:'2026-07-24'},
+  {id:3,parent_id:1,status:'done',month:null,start_date:'2026-07-20',end_date:'2026-07-21'},
+  {id:4,parent_id:null,status:'planned',month:'2026-08',start_date:'2026-08-04',end_date:'2026-08-08'}
+];
+ok(rollHelp.validateTarget?.('week','2026-08-03') && !rollHelp.validateTarget?.('week','2026-08-04'), '周目标必须是周一');
+ok(rollHelp.monthAnchorDelta?.('2026-01-31','2026-02') === 28, '月末锚点夹到目标月末');
+const picked = rollHelp.selectPastRoots?.(sample,'week','2026-08-03') || [];
+ok(picked.length === 1 && picked[0].root.id === 1 && picked[0].nodes.map(x=>x.id).join(',') === '2', '无日期父簇提升且完成子节点不移动');
+ok(picked[0]?.origin === '2026-07-20' && picked[0]?.deltaDays === 14, '来源周与整周平移差正确');
+
 // ── 任务池分类整块排序(纯函数,浏览器与测试共用)
 ok(legacyMigrationPassed, 'legacy db migration adds rollover provenance columns');
 ok(typeof reorderTags === 'function' &&
