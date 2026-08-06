@@ -33,7 +33,7 @@
 - Consumes: `open(dbPath)` 与现有 `SCHEMA`。
 - Produces: `ensureColumn(db, table, column, type)`；`tasks.rollover_origin_week`、`tasks.rollover_origin_month`、`executions.rollover_origin_date`。
 
-- [ ] **Step 1: 写旧数据库迁移失败测试**
+- [x] **Step 1: 写旧数据库迁移失败测试**
 
 在 `test.mjs` 导入 `DatabaseSync`，创建一个只含旧字段的独立临时库，再调用 `open()`：
 
@@ -65,13 +65,13 @@ migrated.close();
 for (const suf of ['', '-wal', '-shm']) { try { fs.unlinkSync(legacyPath + suf); } catch {} }
 ```
 
-- [ ] **Step 2: 运行测试确认 RED**
+- [x] **Step 2: 运行测试确认 RED**
 
 Run: `npm test`
 
 Expected: 新增两条“旧库自动补来源列”失败；原 44 条继续通过。
 
-- [ ] **Step 3: 实现幂等列迁移**
+- [x] **Step 3: 实现幂等列迁移**
 
 在 `db.js` 增加：
 
@@ -92,13 +92,13 @@ ensureColumn(db, 'executions', 'rollover_origin_date');
 
 同时把三列写进新建库的 `SCHEMA`。`GET /api/data` 当前使用任务/执行记录全字段查询，无需新增映射代码；测试必须确认返回对象含这些键。
 
-- [ ] **Step 4: 运行测试确认 GREEN**
+- [x] **Step 4: 运行测试确认 GREEN**
 
 Run: `npm test`
 
 Expected: `46 通过, 0 失败`；连续调用两次 `open(legacyPath)` 不报 duplicate column。
 
-- [ ] **Step 5: 提交迁移**
+- [x] **Step 5: 提交迁移**
 
 ```powershell
 git add db.js test.mjs
@@ -123,7 +123,7 @@ git commit -m "支持顺延来源字段兼容迁移"
   - `monthAnchorDelta(anchorDate, targetMonth): number`
   - `selectPastRoots(tasks, scope, to): Array<{ root, nodes, origin, deltaDays }>`
 
-- [ ] **Step 1: 写纯函数失败测试**
+- [x] **Step 1: 写纯函数失败测试**
 
 在 `test.mjs` 加载尚不存在的模块并断言：
 
@@ -145,13 +145,13 @@ ok(picked[0]?.origin === '2026-07-20' && picked[0]?.deltaDays === 14, '来源周
 
 来源周字段保存周一，因此样例中 7 月 22 日所在周来源为 `2026-07-20`。
 
-- [ ] **Step 2: 运行测试确认 RED**
+- [x] **Step 2: 运行测试确认 RED**
 
 Run: `npm test`
 
 Expected: 四条纯函数断言失败，原因是 `rollover.js` 不存在。
 
-- [ ] **Step 3: 写最小日期助手**
+- [x] **Step 3: 写最小日期助手**
 
 `rollover.js` 使用 UTC 中午无关的纯 ISO 计算，避免夏令时偏差：
 
@@ -178,7 +178,7 @@ function monthAnchorDelta(anchor,targetMonth){
 }
 ```
 
-- [ ] **Step 4: 实现任务簇选择**
+- [x] **Step 4: 实现任务簇选择**
 
 `selectPastRoots()` 必须：
 
@@ -195,7 +195,7 @@ function monthAnchorDelta(anchor,targetMonth){
 module.exports={validateTarget,mondayOfIso,addDaysIso,dayDiffIso,monthAnchorDelta,selectPastRoots};
 ```
 
-- [ ] **Step 5: 运行测试并提交**
+- [x] **Step 5: 运行测试并提交**
 
 Run: `npm test`
 
@@ -218,7 +218,7 @@ git commit -m "增加过往任务簇日期平移算法"
 - Consumes: `validateTarget('day', to)`、SQLite `executions`、现有 `tx()`/`audit()`。
 - Produces: `POST /api/rollover/past` 的 `scope:'day'` 分支，返回 `{ok,count,roots:[],merged}`。
 
-- [ ] **Step 1: 写每日 API 失败测试**
+- [x] **Step 1: 写每日 API 失败测试**
 
 创建跨多天记录、已完成记录和同任务今天已有记录：
 
@@ -241,13 +241,13 @@ ok(data.executions.find(x=>x.id===completedOld.id).date==='2026-01-03','已完�
 
 再调用一次接口，断言 `count===0`；创建已带 `rollover_origin_date='2026-07-20'` 的旧记录后顺延，断言来源不覆盖。
 
-- [ ] **Step 2: 运行测试确认 RED**
+- [x] **Step 2: 运行测试确认 RED**
 
 Run: `npm test`
 
 Expected: `/api/rollover/past` 返回 404。
 
-- [ ] **Step 3: 实现每日事务分支**
+- [x] **Step 3: 实现每日事务分支**
 
 在旧 `/api/rollover` 后新增新路由。day 分支流程：
 
@@ -262,7 +262,7 @@ const targetByTask=new Map(db.prepare(`SELECT * FROM executions WHERE date=? AND
 - `count` 统计被处理的旧记录数，不把已在今天的记录计入。
 - 整批包在一次 `tx(db,...)` 中；接口外层校验日期。
 
-- [ ] **Step 4: 运行测试并提交**
+- [x] **Step 4: 运行测试并提交**
 
 Run: `npm test`
 
@@ -285,7 +285,7 @@ git commit -m "支持全部过往待办顺延到今天"
 - Consumes: `selectPastRoots(tasks,'week',to)` 与 `addDaysIso()`。
 - Produces: `/api/rollover/past` 的 `scope:'week'` 分支；task 来源周/来源月与日期平移。
 
-- [ ] **Step 1: 写周顺延失败测试**
+- [x] **Step 1: 写周顺延失败测试**
 
 构造无日期父任务、未完成日期子任务、已完成日期子任务和本周相交任务：
 
@@ -306,13 +306,13 @@ ok(find(wCurrent.id).start_date==='2026-08-05','已与本周相交任务不重�
 
 补充断言：目标不是周一返回 400；第二次调用 `count===0`；旧来源周不被覆盖；跨月移动时 `month` 改为目标周一月份且 `rollover_origin_month` 记录旧月。
 
-- [ ] **Step 2: 运行测试确认 RED**
+- [x] **Step 2: 运行测试确认 RED**
 
 Run: `npm test`
 
 Expected: week 分支返回 500/400 或不移动数据，新增周断言失败。
 
-- [ ] **Step 3: 实现周事务分支**
+- [x] **Step 3: 实现周事务分支**
 
 ```js
 const rows=db.prepare(`SELECT * FROM tasks WHERE status!='archived'`).all();
@@ -330,7 +330,7 @@ for(const g of groups){
 
 真实实现应使用预编译 statement，并在 audit 中记录 `{to,count,roots,origins}`。`count` 统计移动的未完成日期节点数，`roots` 返回簇根 ID。
 
-- [ ] **Step 4: 运行测试并提交**
+- [x] **Step 4: 运行测试并提交**
 
 Run: `npm test`
 
@@ -353,7 +353,7 @@ git commit -m "支持全部过往任务簇顺延到本周"
 - Consumes: `selectPastRoots(tasks,'month',to)`、`addDaysIso()`。
 - Produces: `/api/rollover/past` 的 `scope:'month'` 分支；首次来源月、月份归属和日期簇平移。
 
-- [ ] **Step 1: 写月顺延失败测试**
+- [x] **Step 1: 写月顺延失败测试**
 
 ```js
 const mRoot=(await api('POST','/api/task',{name:'过往月簇',month:'2026-01',start:'2026-01-31',end:'2026-02-02'})).body.task;
@@ -372,13 +372,13 @@ ok(find(mDone.id).start_date==='2026-01-20'&&find(mDone.id).done_at,'已完成�
 
 为避免样例目标早于 `mBare`，无日期断言单独调用 `to:'2026-08'`。另测：无效月份 400；第二次调用空结果；已有 `rollover_origin_month` 不覆盖；当前月父节点下的旧子分支只移动旧子分支。
 
-- [ ] **Step 2: 运行测试确认 RED**
+- [x] **Step 2: 运行测试确认 RED**
 
 Run: `npm test`
 
 Expected: month 新接口断言失败；旧 `/api/rollover` 月顺延测试仍通过。
 
-- [ ] **Step 3: 实现月事务分支**
+- [x] **Step 3: 实现月事务分支**
 
 对每个 `selectPastRoots(...,'month',to)` 结果：
 
@@ -393,7 +393,7 @@ Expected: month 新接口断言失败；旧 `/api/rollover` 月顺延测试仍�
 res.json({ok:true,count,roots,merged});
 ```
 
-- [ ] **Step 4: 运行完整 API 测试并提交**
+- [x] **Step 4: 运行完整 API 测试并提交**
 
 Run: `npm test`
 
@@ -421,7 +421,7 @@ git commit -m "支持全部过往任务簇顺延到本月"
 - Consumes: task 字段 `rollover_origin_week/month`、execution 字段 `rollover_origin_date`、`POST /api/rollover/past`。
 - Produces: `originOf(t,scope)`、`originBadge(item,scope)`、`runPastRollover(button,scope,to)` 与三个新按钮 ID。
 
-- [ ] **Step 1: 建立浏览器 RED 验收**
+- [x] **Step 1: 建立浏览器 RED 验收**
 
 在隔离 worktree 用临时数据库和 `PORT=8898` 启动服务，种入一个旧月日期任务、一个旧周任务、一个旧日执行。用 Playwright CLI 打开页面并断言当前不存在：
 
@@ -434,7 +434,7 @@ await page.locator('.originchip').count() === 0
 
 Expected: 四项均为 0，浏览器验收 RED。
 
-- [ ] **Step 2: 添加按钮和视觉样式**
+- [x] **Step 2: 添加按钮和视觉样式**
 
 静态 HTML：
 
@@ -456,7 +456,7 @@ CSS：
 .rollbtn:disabled{opacity:.45;cursor:wait}
 ```
 
-- [ ] **Step 3: 增加来源读取和格式化助手**
+- [x] **Step 3: 增加来源读取和格式化助手**
 
 ```js
 function inheritedOrigin(t,key){
@@ -482,7 +482,7 @@ function originBadge(item,scope){
 
 任务池和年度目标不显示来源。
 
-- [ ] **Step 4: 绑定三类批量操作**
+- [x] **Step 4: 绑定三类批量操作**
 
 ```js
 async function runPastRollover(btn,scope,to,onTarget){
@@ -506,7 +506,7 @@ $('rollPastWeek').addEventListener('click',()=>{const mon=fmtDate(mondayOf(new D
 $('rollPastMonth').addEventListener('click',()=>{const ym=ymOf(today());return runPastRollover($('rollPastMonth'),'month',ym,()=>{viewMonth=ym;});});
 ```
 
-- [ ] **Step 5: 浏览器 GREEN 验收**
+- [x] **Step 5: 浏览器 GREEN 验收**
 
 Playwright CLI 依次验证：
 
@@ -519,7 +519,7 @@ Playwright CLI 依次验证：
 7. 1280×720 和窄视口下长任务名不遮住来源徽章、完成框或 ×。
 8. 控制台除 `/favicon.ico` 404 外无新异常。
 
-- [ ] **Step 6: 提交前端**
+- [x] **Step 6: 提交前端**
 
 ```powershell
 git add public/index.html
@@ -541,7 +541,7 @@ git commit -m "增加过往任务顺延按钮与来源标记"
 - Consumes: 已通过 API 与浏览器验收的日/周/月顺延行为。
 - Produces: Agent 可维护契约、用户说明、8790 新进程和 GitHub `main`。
 
-- [ ] **Step 1: 同步文档**
+- [x] **Step 1: 同步文档**
 
 README 和 Agent 文档必须明确：
 

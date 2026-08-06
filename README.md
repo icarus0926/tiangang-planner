@@ -14,7 +14,7 @@
 - **整树完成 + 自动冒泡**:所有任务都能勾选;勾父任务会把整棵子树一起完成,取消则整树重开;单个子任务变化也会向父级自动冒泡(双向、可逆)
 - **字段点亮可见性**:挂目标→年度页可见;填月份→进月度规划池;填起止日期→上甘特图;拉入某天→当日待办。同一条数据,四个时间尺度各取所需
 - **挂靠 ⇄ 与独立 ⇱**:任务可随时挂到别的任务下面/独立成顶层,挂靠只改层级不动排期,且有成环防护
-- **顺延不污染历史**:月度/每日一键顺延未完成项;`month` 记计划归属、`done_at` 记完成历史,统计不受顺延影响
+- **顺延不污染历史**:旧的指定月/日顺延保持可用；日、周、月页面还可将全部过往未完成项事务顺延到当前周期。`month` 记计划归属、`done_at` 记完成历史，首次来源字段保留最初日期/周/月，统计不受顺延影响
 - **每笔写操作留审计**,启动时+每 24h 自动备份,滚动保留 30 份
 
 ## 页面演示
@@ -30,7 +30,7 @@
 ![月度规划](docs/screenshots/v2-month.png)
 
 - **月度甘特**:树形时间线,▸ 逐层下钻。实线条=已排期(拖动改期、两端手柄改时长,**父条拖动=整棵子树平移**);虚线幽灵条=未排期子任务(点击按父范围落定);虚线信封条=没排期但子孙有日期的父任务(自动包络)。左侧标签上下拖动排同层顺序(排序≠挂靠,跨层拖动会被拦下),× 一键退回规划池
-- **本月规划池**:本月要做的事,含单独排进本月的子任务(带面包屑徽章);✎ 就地改名、优先级点击轮换、⏱ 一键排期、＋子任务、⇄ 挂到、未完成顺延下月
+- **本月规划池**:本月要做的事,含单独排进本月的子任务(带面包屑徽章);✎ 就地改名、优先级点击轮换、⏱ 一键排期、＋子任务、⇄ 挂到、未完成顺延下月，以及“全部过往未完成 → 本月”
 - **任务池**:按学习、工作、投资、副业等可编辑标签分组;深色卡片表示已分配,任务可跨分类拖动改标签,也能展开维护子任务。直接按住左侧分类名称可把该分类连同任务卡、展开区和添加框整块换序,刷新后仍保留;`其他` 固定在最后
 - **已完成**:整树完成的任务归档区,↩ 一键恢复(整棵重开)
 
@@ -42,13 +42,13 @@
 
 ![周计划](docs/screenshots/v2-week.png)
 
-同一棵树的 7 天窗口(周层级零存储,纯按日期现算):周甘特带星期刻度,树形下钻与月甘特同引擎;「＋添加周任务」直接以本周为出生日期生根;下方本周任务卡树形展示、已完成自动分区。
+同一棵树的 7 天窗口(周层级零存储,纯按日期现算):周甘特带星期刻度,树形下钻与月甘特同引擎;「＋添加周任务」直接以本周为出生日期生根;可将“全部过往未完成”顺延到本周一；下方本周任务卡树形展示、已完成自动分区。
 
 ### 每日执行
 
 ![每日执行](docs/screenshots/v2-day.png)
 
-- **当日待办**:自由文本随手记(琐事默认不进任务树),右侧 ↗ 一键升格为正式任务;勾掉关联叶子任务的待办,任务树同步完成并向上冒泡;未完成一键顺延明天
+- **当日待办**:自由文本随手记(琐事默认不进任务树),右侧 ↗ 一键升格为正式任务;勾掉关联叶子任务的待办,任务树同步完成并向上冒泡;旧“未完成顺延明天”保持可用，另可将全部过往未完成待办顺延到今天
 - **本周任务参考**:本周的树,「＋今日」把叶子拉进当日待办(同任务同日自动查重)
 
 ### 年度目标
@@ -81,7 +81,7 @@ install: npm install
 config: copy .env.example to .env; set DASH_PASSWORD (any string), PORT (default 8790)
 run: npm start          # or: node server.js
 verify: GET /api/data with header "x-dash-key: <DASH_PASSWORD>" returns {goals,tasks,executions}
-test: npm test          # 41 integration checks, temporary SQLite database
+test: npm test          # 117 integration checks, temporary SQLite database (verified 2026-08-06)
 data: single file data/tiangang.db (auto-created; WAL mode; auto-backup to backups/)
 ```
 
@@ -114,7 +114,8 @@ PATCH  /api/task/:id                 改任意字段(parent_id=挂靠/独立,自
 POST   /api/task/:id/toggle-done     任意节点勾选(整树级联+向上冒泡)
 DELETE /api/task/:id                 软归档整树;?hard=1 硬删(仅已归档)
 POST   /api/task/:id/restore         恢复(整树重开)
-POST   /api/rollover                 {scope:'month'|'day',from,to} 事务顺延未完成
+POST   /api/rollover                 {scope:'month'|'day',from,to} 旧的指定来源事务顺延（兼容）
+POST   /api/rollover/past            {scope:'day'|'week'|'month',to} 全部过往未完成顺延到目标周期
 POST   /api/execution                当日待办({task_id}|{text})
 PATCH  /api/execution/:id            勾选(叶子任务联动完成)
 POST   /api/execution/:id/promote    自由文本升格为任务
@@ -123,6 +124,14 @@ POST   /api/tags                     保存动态任务分类列表
 ```
 
 配置了 `DASH_PASSWORD` 时,所有 `/api/*` 需请求头 `x-dash-key: <DASH_PASSWORD>`。
+
+## 全部过往未完成顺延
+
+`POST /api/rollover/past` 接收三个 scope：`day` 的 `to` 必须是 `YYYY-MM-DD`；`week` 的 `to` 也必须是 `YYYY-MM-DD`，且只能是周一；`month` 的 `to` 必须是 `YYYY-MM`。成功统一返回 `{ ok:true, count, roots, merged }`：`count` 是实际处理的记录/任务节点数，任务 scope 的 `roots` 是被处理任务簇根 ID，daily 的 `roots` 固定为空数组；`merged` 目前只用于 daily 的关联待办冲突合并。
+
+每日顺延移动目标日前所有未完成 execution，并写入且永不覆盖 `rollover_origin_date`。同一任务在目标日已有未完成 execution 时，保留目标记录、取两者最早首次来源并删除旧记录；该合并写审计。周/月按最高可提升的过往未完成任务簇处理：只移动未完成节点，已完成节点、`done_at` 与完成历史原地保留。周以整周天数平移真实日期，不存储业务 `week` 字段；月以最早排期锚点移到目标月同日，月末会 clamp 到目标月月末，同一任务簇共用同一个 `deltaDays`，以保留时长和树内相对位置。无日期普通任务池节点、目标周期相交或当前/未来节点不移动。
+
+任务首次来源分别保存在 `rollover_origin_week`（ISO 周一）和 `rollover_origin_month`（`YYYY-MM`）；前端显示来源时可沿父链继承最近的来源字段，所以无来源字段的子节点仍能说明所属顺延簇的首次来源。周/月在单一事务内对实际移动节点写逐项审计并写批次审计；daily 写批次审计，发生同任务合并时另写含保留/删除 ID 的合并审计。旧 `POST /api/rollover` 以及“顺延明天/下月”按钮仍保持兼容。
 
 ## 给后续开发 Agent
 

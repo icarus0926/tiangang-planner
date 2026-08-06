@@ -102,6 +102,30 @@
 
 返回 `{ ok, count }`，其中月顺延的 `count` 是实际顺延的最高未完成任务簇数量。日期落在来源月但 `month` 为空的部分完成任务簇也会进入下月；已完成节点、`done_at` 和原甘特日期保持不变。`scope` 仅接受 `month` 或 `day`。
 
+### `POST /api/rollover/past`
+
+将目标周期之前的全部未完成事项事务顺延到目标周期。三个 scope 的请求格式为：
+
+```json
+{ "scope": "day", "to": "2026-08-06" }
+```
+
+```json
+{ "scope": "week", "to": "2026-08-03" }
+```
+
+```json
+{ "scope": "month", "to": "2026-08" }
+```
+
+`day` 的 `to` 必须是有效 `YYYY-MM-DD`；`week` 同样使用有效 ISO 日期但必须是周一；`month` 必须是有效 `YYYY-MM`。成功响应为 `{ "ok": true, "count": 0, "roots": [], "merged": 0 }`。`count` 为实际处理的 execution 或任务节点数；`roots` 为周/月被处理任务簇的根 ID（daily 固定为 `[]`）；`merged` 为 daily 因目标日同任务未完成 execution 而合并、删除旧记录的次数（week/month 为 `0`）。无效目标返回 400。
+
+- `day`：移动 `date < to` 的未完成 execution。首次移动时将旧日期写入 `rollover_origin_date`，后续不覆盖。关联任务在目标日已有未完成 execution 时，保留目标记录、将其来源更新为两条记录中最早来源，并删除旧记录。
+- `week`：选择目标周一之前的过往未完成任务簇，所有实际排期统一平移完整周数；来源周写入 `rollover_origin_week`，格式为首次排期所在周的周一 `YYYY-MM-DD`。周是纯日期窗口，不新增或持久化 `week` 字段。
+- `month`：选择目标月之前的过往未完成任务簇，来源月写入 `rollover_origin_month`，格式为 `YYYY-MM`。有日期的簇以最早排期锚定目标月同日；例如 1 月 31 日到非闰年 2 月会 clamp 到 2 月 28 日。该簇所有实际移动节点使用同一个 `deltaDays`，因此保持时长和树内相对位置。
+
+周/月只移动实际过期的未完成节点；部分完成簇的已完成后代、`done_at` 和完成历史不移动。无日期普通任务池节点，以及与目标窗口相交或已在当前/未来周期的节点不移动。请求都在单一事务中写批次审计；周/月另对实际移动节点写逐项审计，daily 发生同任务合并时写含 `removed_id/kept_id` 的合并审计。周/月批次审计含 `to/count/roots/origins`；任何节点失败会回滚数据、来源字段和审计。旧的 `POST /api/rollover` 及其“未完成顺延明天/下月”前端入口不受影响。
+
 ## 每日执行
 
 ### `POST /api/execution`

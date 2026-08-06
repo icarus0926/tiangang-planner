@@ -31,6 +31,16 @@
 
 `mutate()` 是标准写入入口：调用 API、显示结果、重新加载数据、执行 `renderAll()`。新增交互不要直接修改 `DATA` 后假装持久化；服务端成功响应后，以新快照为准。
 
+## 全部过往未完成顺延与来源徽章
+
+入口函数是 `runPastRollover(btn, scope, to, onTarget)`：先确认“全部过往未完成项顺延到今天/本周/本月”，调用 `POST /api/rollover/past`，再执行目标窗口回调、`reload()` 和 toast。月、周、日页面分别传 `viewMonth`、周一 `viewWeekMon`、`viewDay`；前端不得把周目标改成非周一，也不得自行批量 PATCH 任务。旧 `POST /api/rollover` 的指定来源顺延，以及“未完成顺延明天/下月”按钮继续保留，不能被新入口替代。
+
+来源显示由 `originOf()` 与 `originBadge()` 统一处理：daily 只读取 execution 自己的 `rollover_origin_date`，显示“来自 M 月 D 日”；week/month 通过 `inheritedOrigin()` 从当前任务向上沿 `parent_id` 链查找最近的 `rollover_origin_week` 或 `rollover_origin_month`，显示首次来源周或月。这个继承仅用于 UI 解释任务簇来源，不会回写子节点或改变 API 数据。
+
+`/api/rollover/past` 的 scope/目标格式为：`day` + `YYYY-MM-DD`、`week` + 周一的 `YYYY-MM-DD`、`month` + `YYYY-MM`。成功响应包含 `{ok,count,roots,merged}`；daily 的 `merged` 表示同任务目标日 execution 的合并次数。周没有持久化业务 `week` 字段，展示和顺延均以 7 天日期窗口计算。月顺延由服务端统一处理月末 clamp 和同簇 `deltaDays`，前端只刷新结果，不得重新计算或逐项移动。
+
+UI 文案应保持以下事实：已完成历史不移动；部分完成任务簇仅移动未完成节点；首次来源在多次顺延中不变；daily 合并及其合并审计、周/月逐项审计和三种 scope 的批次审计均由服务端事务保证。
+
 ## 五个页面
 
 ### 总览
@@ -104,3 +114,4 @@
 - 分类拖拽、挂靠和同层排序不会互相串义。
 - 全景图拖动、缩放、筛选、聚焦和跳转无控制台错误。
 - 写入后刷新页面，状态仍与 SQLite 一致。
+- 日、周、月三个“全部过往未完成”入口分别发送正确的 `scope` 与目标格式；week 目标为周一，来源徽章能从父链显示首次来源，旧“顺延明天/下月”按钮仍可用。
