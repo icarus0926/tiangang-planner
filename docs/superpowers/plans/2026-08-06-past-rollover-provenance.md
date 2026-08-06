@@ -631,7 +631,7 @@ Start-Process -FilePath 'C:\Program Files\nodejs\node.exe' -ArgumentList 'server
 - 在正式页面三页看到新按钮；不在真实数据上执行批量顺延，除非用户另行明确授权。
 - 自动备份目录产生启动备份，真实 `data/tiangang.db` 未被测试脚本替换。
 
-- [ ] **Step 4: 提交计划状态并推送 GitHub**
+- [x] **Step 4: 提交计划状态并推送 GitHub**
 
 ```powershell
 git add README.md docs/agent docs/superpowers/plans/2026-08-06-past-rollover-provenance.md
