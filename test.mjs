@@ -1,6 +1,7 @@
 // 集成测试:临时库 + 真服务,全 API 覆盖。node test.mjs
 import fs from 'node:fs';
 import path from 'node:path';
+import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -98,6 +99,75 @@ ok(rolloverAction.includes("api('POST','/api/rollover/past',{scope,to})") &&
   rolloverAction.includes('await reload()') && rolloverAction.includes('finally{btn.disabled=false;}') &&
   rolloverBindings.includes("'day',today()") && rolloverBindings.includes("'week',mon") &&
   rolloverBindings.includes("'month',ym"), '全量顺延确认、精确 payload、忙碌态、重载与三类绑定完整');
+
+// 直接执行 HTML 中的真实函数；仅替换浏览器/API 边界，不复制实现逻辑
+const loadRunPastRollover = deps => {
+  const context = vm.createContext({ ...deps });
+  vm.runInContext(`${rolloverAction};this.runPastRollover=runPastRollover;`, context);
+  return context.runPastRollover;
+};
+
+let cancelApiCalls = 0;
+const cancelBtn = { disabled: false };
+await loadRunPastRollover({
+  confirm: () => false,
+  api: async () => { cancelApiCalls++; },
+  reload: async () => {},
+  toast: () => {}
+})(cancelBtn, 'day', '2026-08-06', () => {});
+ok(cancelApiCalls === 0 && cancelBtn.disabled === false,
+  '全量顺延行为：取消确认不请求且按钮保持可用');
+
+const successEvents = [];
+const successBtn = { disabled: false };
+let successPayload = null, successDisabledDuring = false;
+await loadRunPastRollover({
+  confirm: () => { successEvents.push('confirm'); return true; },
+  api: async (method, route, payload) => {
+    successEvents.push('api'); successDisabledDuring = successBtn.disabled;
+    successPayload = { method, route, scope: payload.scope, to: payload.to };
+    return { count: 2 };
+  },
+  reload: async () => { successEvents.push('reload'); },
+  toast: message => { successEvents.push('toast:' + message); }
+})(successBtn, 'week', '2026-08-03', () => { successEvents.push('target'); });
+ok(JSON.stringify(successPayload) === JSON.stringify({
+  method: 'POST', route: '/api/rollover/past', scope: 'week', to: '2026-08-03'
+}) && successDisabledDuring && successBtn.disabled === false &&
+  successEvents.join('|') === 'confirm|api|target|reload|toast:已顺延 2 项到本周 ✓',
+  '全量顺延行为：精确 payload、请求中禁用及成功 target→reload→toast');
+
+let allFailuresRecovered = true;
+for (const message of ['HTTP 500', 'network down']) {
+  const events = [], btn = { disabled: false };
+  await loadRunPastRollover({
+    confirm: () => { events.push('confirm'); return true; },
+    api: async () => { events.push('api'); throw new Error(message); },
+    reload: async () => { events.push('reload'); throw new Error('reload failed'); },
+    toast: text => { events.push('toast:' + text); }
+  })(btn, 'month', '2026-08', () => { events.push('target'); });
+  allFailuresRecovered &&= btn.disabled === false &&
+    events.join('|') === `confirm|api|toast:顺延失败:${message}|reload`;
+}
+ok(allFailuresRecovered, '全量顺延行为：500/异常均尝试 reload、错误 toast 且 finally 恢复');
+
+let concurrentApiCalls = 0, concurrentConfirms = 0, concurrentTargets = 0;
+const concurrentBtn = { disabled: false }, releases = [];
+const concurrentRun = loadRunPastRollover({
+  confirm: () => { concurrentConfirms++; return true; },
+  api: async () => {
+    concurrentApiCalls++;
+    return await new Promise(resolve => releases.push(resolve));
+  },
+  reload: async () => {},
+  toast: () => {}
+});
+const firstRollover = concurrentRun(concurrentBtn, 'day', '2026-08-06', () => { concurrentTargets++; });
+const duplicateRollover = concurrentRun(concurrentBtn, 'day', '2026-08-06', () => { concurrentTargets++; });
+releases.forEach(resolve => resolve({ count: 1 }));
+await Promise.all([firstRollover, duplicateRollover]);
+ok(concurrentApiCalls === 1 && concurrentConfirms === 1 && concurrentTargets === 1 && concurrentBtn.disabled === false,
+  '全量顺延行为：按钮禁用期间拒绝并发重复提交');
 
 // ── 过往任务顺延：日期平移与任务簇选择纯函数
 let rollHelp = {};

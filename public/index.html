@@ -155,7 +155,12 @@
   /* 甘特 */
   .mgantt{padding:2px 4px;overflow:visible}
   .mg-row{display:grid;grid-template-columns:235px 1fr;align-items:center;min-height:30px}
-  @media(max-width:720px){.mg-row{grid-template-columns:180px 1fr}}
+  @media(max-width:720px){
+    .mg-row{grid-template-columns:180px 1fr}
+    #planList .mrow{flex-wrap:wrap;align-content:center;row-gap:6px;max-width:100%;box-sizing:border-box}
+    #planList .mrow .name{flex:1 1 180px;min-width:140px;word-break:normal;overflow-wrap:anywhere}
+    #planList .mrow .ops{margin-left:auto}
+  }
   .mg-label{display:flex;align-items:center;padding-right:10px;font-size:12.5px;color:var(--text2);overflow:hidden;white-space:nowrap}
   .mg-label .lt{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
   .mg-label .lux{flex:none;margin-right:2px;width:16px;height:16px;line-height:14px;text-align:center;border-radius:50%;
@@ -486,6 +491,7 @@ async function mutate(fn,okMsg){
     try{await reload();}catch(_){}}
 }
 async function runPastRollover(btn,scope,to,onTarget){
+  if(btn.disabled)return;
   const names={day:'今天',week:'本周',month:'本月'};
   if(!confirm(`把全部过往未完成项顺延到${names[scope]}？\n已完成历史不会移动。`))return;
   btn.disabled=true;
