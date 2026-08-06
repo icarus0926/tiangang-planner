@@ -65,6 +65,18 @@ ok(rollHelp.monthAnchorDelta?.('2026-01-31','2026-02') === 28, '月末锚点夹�
 const picked = rollHelp.selectPastRoots?.(sample,'week','2026-08-03') || [];
 ok(picked.length === 1 && picked[0].root.id === 1 && picked[0].nodes.map(x=>x.id).join(',') === '2', '无日期父簇提升且完成子节点不移动');
 ok(picked[0]?.origin === '2026-07-20' && picked[0]?.deltaDays === 14, '来源周与整周平移差正确');
+const futureChild = [
+  {id:5,parent_id:null,status:'planned',month:'2026-07',start_date:null,end_date:null},
+  {id:6,parent_id:5,status:'planned',month:'2026-09',start_date:'2026-09-01',end_date:'2026-09-02'}
+];
+const futurePicked = rollHelp.selectPastRoots?.(futureChild,'month','2026-08') || [];
+ok(futurePicked[0]?.nodes.map(x=>x.id).join(',') === '5', '过期父节点不带动未来子节点');
+const barePoolChild = [
+  {id:7,parent_id:null,status:'planned',month:'2026-07',start_date:null,end_date:null},
+  {id:8,parent_id:7,status:'pool',month:null,start_date:null,end_date:null}
+];
+const barePoolPicked = rollHelp.selectPastRoots?.(barePoolChild,'month','2026-08') || [];
+ok(barePoolPicked[0]?.nodes.map(x=>x.id).join(',') === '7', '过期父节点不带动无日期普通池子节点');
 
 // ── 任务池分类整块排序(纯函数,浏览器与测试共用)
 ok(legacyMigrationPassed, 'legacy db migration adds rollover provenance columns');

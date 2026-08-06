@@ -69,13 +69,6 @@ function selectPastRoots(tasks, scope, to) {
     task.start_date <= (scope === 'week' ? targetEnd : `${to}-31`) &&
     task.end_date >= (scope === 'week' ? to : `${to}-01`);
   const isUndatedUnmonth = task => !task.month && !task.start_date && !task.end_date;
-  const children = new Map();
-  for (const task of ordered) {
-    if (!byId.has(task.parent_id)) continue;
-    if (!children.has(task.parent_id)) children.set(task.parent_id, []);
-    children.get(task.parent_id).push(task);
-  }
-
   const rootFor = task => {
     let root = task;
     let parent = byId.get(root.parent_id);
@@ -92,20 +85,11 @@ function selectPastRoots(tasks, scope, to) {
   };
 
   const groups = new Map();
-  const addOpenBranch = (task, nodes) => {
-    const stack = [task];
-    while (stack.length) {
-      const node = stack.pop();
-      if (!isOpen(node) || nodes.has(node.id)) continue;
-      nodes.set(node.id, node);
-      stack.push(...(children.get(node.id) || []));
-    }
-  };
   for (const task of ordered) {
     if (!isOpen(task) || !isPast(task)) continue;
     const root = rootFor(task);
     if (!groups.has(root.id)) groups.set(root.id, { root, nodes: new Map() });
-    addOpenBranch(task, groups.get(root.id).nodes);
+    groups.get(root.id).nodes.set(task.id, task);
   }
 
   return [...groups.values()].map(group => {
