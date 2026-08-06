@@ -382,9 +382,9 @@ const startOnly = (await api('POST', '/api/task', {
 })).body.task;
 const startOnlyBefore = tdb.prepare('SELECT * FROM tasks WHERE id=?').get(startOnly.id);
 const sentinelExecution = (await api('POST', '/api/execution', {
-  text: '周接口隔离 sentinel', date: '2026-07-18'
+  text: '周接口隔离未完成 sentinel', date: '2026-07-18'
 })).body.execution;
-tdb.prepare('UPDATE executions SET done=1,notion_id=?,rollover_origin_date=? WHERE id=?')
+tdb.prepare('UPDATE executions SET done=0,notion_id=?,rollover_origin_date=? WHERE id=?')
   .run('sentinel-notion', '2026-06-30', sentinelExecution.id);
 const executionFields = 'id,task_id,text,date,done,notion_id,rollover_origin_date';
 const sentinelBefore = tdb.prepare(`SELECT ${executionFields} FROM executions WHERE id=?`).get(sentinelExecution.id);
@@ -398,8 +398,9 @@ ok(edgeWeek.status === 200 && edgeWeek.body.count === 1 &&
   '仅 end_date 的过往任务被选中且只平移结束日期');
 ok(JSON.stringify(startOnlyAfter) === JSON.stringify(startOnlyBefore),
   '仅 start_date 的任务不满足有效结束日期规则且全部字段不变');
-ok(JSON.stringify(sentinelAfter) === JSON.stringify(sentinelBefore),
-  '周顺延不修改 sentinel execution 的完整关键字段');
+ok(sentinelBefore.done === 0 && sentinelBefore.date < '2026-08-03' &&
+  JSON.stringify(sentinelAfter) === JSON.stringify(sentinelBefore),
+  '周顺延不修改旧日未完成 sentinel execution 的完整关键字段');
 
 tdb.exec('DELETE FROM tasks');
 const provenanceRoot = (await api('POST', '/api/task', { name: '多次顺延簇' })).body.task;
