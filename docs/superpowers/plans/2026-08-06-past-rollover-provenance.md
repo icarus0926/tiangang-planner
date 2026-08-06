@@ -606,7 +606,7 @@ if($probeHits.Count -ne 1 -or $probeHits[0] -ne $probe){throw '敏感信息过�
 
 Expected: 全部测试 0 失败；三个语法/差异检查退出 0；敏感信息扫描仅用带路径、行号、完整内容和行尾锚定的正则过滤 `.env.example` `change-me` 占位行，原始命中仅为该占位行、过滤后为 0 真命中；合成的其他路径匹配行必须保留。检查 `git status --short` 时只允许看到主目录原有的 `package-lock.json` 差异，不得出现测试数据库、快照或 `.env`。
 
-- [ ] **Step 3: 合并并重启正式 8790**
+- [x] **Step 3: 合并并重启正式 8790**
 
 执行时使用 `superpowers:finishing-a-development-branch`。用户已要求功能进入现有 8790，但仍需按该技能确认本地合并选择。合并后在主目录再运行 `npm test`。
 
