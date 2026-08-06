@@ -118,9 +118,9 @@
 { "scope": "month", "to": "2026-08" }
 ```
 
-`day` 的 `to` 必须是有效 `YYYY-MM-DD`；`week` 同样使用有效 ISO 日期但必须是周一；`month` 必须是有效 `YYYY-MM`。成功响应为 `{ "ok": true, "count": 0, "roots": [], "merged": 0 }`。`count` 为实际处理的 execution 或任务节点数；`roots` 为周/月被处理任务簇的根 ID（daily 固定为 `[]`）；`merged` 为 daily 因目标日同任务未完成 execution 而合并、删除旧记录的次数（week/month 为 `0`）。无效目标返回 400。
+`day` 的 `to` 必须是有效 `YYYY-MM-DD`；`week` 同样使用有效 ISO 日期但必须是周一；`month` 必须是有效 `YYYY-MM`。成功响应为 `{ "ok": true, "count": 0, "roots": [], "merged": 0 }`。`count` 为实际处理的 execution 或任务节点数；`roots` 为周/月被处理任务簇的根 ID（daily 固定为 `[]`）；`merged` 为 daily 因目标日同任务 execution 而合并、删除旧记录的次数（week/month 为 `0`）。无效目标返回 400。
 
-- `day`：移动 `date < to` 的未完成 execution。首次移动时将旧日期写入 `rollover_origin_date`，后续不覆盖。关联任务在目标日已有未完成 execution 时，保留目标记录、将其来源更新为两条记录中最早来源，并删除旧记录。
+- `day`：移动 `date < to` 的未完成 execution。首次移动时将旧日期写入 `rollover_origin_date`，后续不覆盖。关联任务优先保留目标日未完成 execution；若没有未完成目标记录但存在同任务已完成 execution，也保留该已完成目标记录。合并只将保留记录的来源更新为两条记录中最早来源并删除旧记录，不改变保留记录的 ID、`done`、文本或其他既有语义。
 - `week`：选择目标周一之前的过往未完成任务簇，所有实际排期统一平移完整周数；来源周写入 `rollover_origin_week`，格式为首次排期所在周的周一 `YYYY-MM-DD`。周是纯日期窗口，不新增或持久化 `week` 字段。
 - `month`：选择目标月之前的过往未完成任务簇，来源月写入 `rollover_origin_month`，格式为 `YYYY-MM`。有日期的簇以最早排期锚定目标月同日；例如 1 月 31 日到非闰年 2 月会 clamp 到 2 月 28 日。该簇所有实际移动节点使用同一个 `deltaDays`，因此保持时长和树内相对位置。
 

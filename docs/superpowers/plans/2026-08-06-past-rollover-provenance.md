@@ -552,7 +552,7 @@ README 和 Agent 文档必须明确：
 - 部分完成只移动未完成节点；旧按钮保持。
 - 每日关联执行冲突会合并并审计。
 
-- [ ] **Step 2: 完整验证**
+- [x] **Step 2: 完整验证**
 
 Run:
 
@@ -561,12 +561,21 @@ npm test
 node --check server.js
 node --check rollover.js
 git diff --check
-$hits=git grep -l -E 'ntn_[A-Za-z0-9]{10,}|DASH_PASSWORD=[^[:space:]]+' HEAD 2>$null
-if($LASTEXITCODE -eq 0){throw "敏感信息命中: $($hits -join ', ')"}
-if($LASTEXITCODE -ne 1){throw '敏感信息扫描执行失败'}
+$raw=@(git grep -n -E 'ntn_[A-Za-z0-9]{10,}|DASH_PASSWORD=[^[:space:]]+' HEAD 2>$null)
+$grepExit=$LASTEXITCODE
+if($grepExit -ne 0 -and $grepExit -ne 1){throw '敏感信息扫描执行失败'}
+$placeholderLine='HEAD:.env.example:2:'+('DASH_'+'PASSWORD=change-me')
+$hits=@($raw | Where-Object {
+  $_ -ne $placeholderLine -and
+  $_ -notmatch '^HEAD:docs/superpowers/plans/2026-08-06-past-rollover-provenance\.md:\d+:\$raw=@\(git grep -n -E '
+})
+if($hits.Count){
+  $files=@($hits | ForEach-Object { if($_ -match '^HEAD:([^:]+):'){ $Matches[1] } } | Sort-Object -Unique)
+  throw "敏感信息命中: $($files -join ', ')"
+}
 ```
 
-Expected: 全部测试 0 失败；三个语法/差异检查退出 0；敏感信息扫描无文件命中。检查 `git status --short` 时只允许看到主目录原有的 `package-lock.json` 差异，不得出现测试数据库、快照或 `.env`。
+Expected: 全部测试 0 失败；三个语法/差异检查退出 0；敏感信息扫描过滤精确的 `.env.example` `change-me` 占位行和本扫描命令自身后为 0 真命中。检查 `git status --short` 时只允许看到主目录原有的 `package-lock.json` 差异，不得出现测试数据库、快照或 `.env`。
 
 - [ ] **Step 3: 合并并重启正式 8790**
 

@@ -27,7 +27,7 @@
 11. `POST /api/rollover/past` 将全部过往未完成事项顺延到一个明确目标：daily `YYYY-MM-DD`、week 周一 `YYYY-MM-DD`、month `YYYY-MM`。周是纯 7 天日期窗口，不存储业务 `week` 字段。
 12. 首次顺延来源不可覆盖：execution 使用 `rollover_origin_date`；任务使用 `rollover_origin_week`（周一）和 `rollover_origin_month`（`YYYY-MM`）。周/月 UI 可沿父链显示最近来源，继承仅用于展示。
 13. 周顺延将真实排期按完整周天数平移；月顺延把最早排期锚到目标月同日，月末 clamp 到目标月月末，同一任务簇共用一个 `deltaDays`。部分完成簇只移动未完成节点，已完成后代、`done_at` 和完成历史原地保留。
-14. daily 顺延在目标日已有同任务未完成 execution 时合并：保留目标日记录、取最早首次来源、删除旧记录，并记合并审计。三种 scope 都在单一事务中写批次 audit；周/月另写实际移动节点的逐项 audit，失败必须整体回滚。
+14. daily 顺延优先与目标日同任务未完成 execution 合并；若没有未完成目标记录但有已完成记录，也合并到该已完成目标记录。保留目标记录的 ID、`done`、文本等语义，仅取最早首次来源并删除旧记录，再记合并审计。三种 scope 都在单一事务中写批次 audit；周/月另写实际移动节点的逐项 audit，失败必须整体回滚。
 15. 旧 `POST /api/rollover` 以及“未完成顺延明天/下月”前端按钮是兼容接口，不能在维护时移除或改写其语义。
 
 ## 已知技术债与边界

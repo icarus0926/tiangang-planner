@@ -33,7 +33,7 @@
 
 ## 全部过往未完成顺延与来源徽章
 
-入口函数是 `runPastRollover(btn, scope, to, onTarget)`：先确认“全部过往未完成项顺延到今天/本周/本月”，调用 `POST /api/rollover/past`，再执行目标窗口回调、`reload()` 和 toast。月、周、日页面分别传 `viewMonth`、周一 `viewWeekMon`、`viewDay`；前端不得把周目标改成非周一，也不得自行批量 PATCH 任务。旧 `POST /api/rollover` 的指定来源顺延，以及“未完成顺延明天/下月”按钮继续保留，不能被新入口替代。
+入口函数是 `runPastRollover(btn, scope, to, onTarget)`：先确认“全部过往未完成项顺延到今天/本周/本月”，调用 `POST /api/rollover/past`，成功后执行目标窗口回调、`reload()` 和 toast。三个入口在点击时计算真实目标，而不是使用用户正在浏览的窗口：daily 传 `today()` 并复位 `viewDay=today()`；week 传 `fmtDate(mondayOf(new Date()))` 并复位 `viewWeekMon`；month 传 `ymOf(today())` 并复位 `viewMonth`。前端不得把周目标改成非周一，也不得自行批量 PATCH 任务。旧 `POST /api/rollover` 的指定来源顺延，以及“未完成顺延明天/下月”按钮继续保留，不能被新入口替代。
 
 来源显示由 `originOf()` 与 `originBadge()` 统一处理：daily 只读取 execution 自己的 `rollover_origin_date`，显示“来自 M 月 D 日”；week/month 通过 `inheritedOrigin()` 从当前任务向上沿 `parent_id` 链查找最近的 `rollover_origin_week` 或 `rollover_origin_month`，显示首次来源周或月。这个继承仅用于 UI 解释任务簇来源，不会回写子节点或改变 API 数据。
 
