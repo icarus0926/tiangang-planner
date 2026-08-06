@@ -251,12 +251,12 @@ const pastDay = await api('POST', '/api/rollover/past', { scope: 'day', to: '202
 ok(pastDay.status === 200 && pastDay.body.count === 2 && pastDay.body.merged === 1 &&
   Array.isArray(pastDay.body.roots) && pastDay.body.roots.length === 0,
   '全部过往每日待办拉到今天并合并冲突');
-data = (await api('GET', '/api/data')).body;
-const movedFree = data.executions.find(x => x.id === oldFree.id);
-const keptToday = data.executions.find(x => x.id === todayLinked.id);
+const executionById = tdb.prepare('SELECT * FROM executions WHERE id=?');
+const movedFree = executionById.get(oldFree.id);
+const keptToday = executionById.get(todayLinked.id);
 ok(movedFree?.date === '2026-07-10' && movedFree.rollover_origin_date === '2026-07-01', '自由待办保留首次来源日');
-ok(keptToday?.rollover_origin_date === '2026-07-02' && !data.executions.some(x => x.id === oldLinked.id), '关联待办冲突合并到今天记录');
-ok(data.executions.find(x => x.id === completedOld.id)?.date === '2026-07-03', '已完成历史不顺延');
+ok(keptToday?.rollover_origin_date === '2026-07-02' && !executionById.get(oldLinked.id), '关联待办冲突合并到今天记录');
+ok(executionById.get(completedOld.id)?.date === '2026-07-03', '已完成历史不顺延');
 const mergeAudit = tdb.prepare(`SELECT after_json FROM audit WHERE entity='execution' AND after_json IS NOT NULL ORDER BY id DESC`).all()
   .map(x => { try { return JSON.parse(x.after_json); } catch { return null; } })
   .find(x => x?.removed_id === oldLinked.id && x?.kept_id === todayLinked.id);
@@ -267,9 +267,8 @@ ok(pastDayAgain.status === 200 && pastDayAgain.body.count === 0 && pastDayAgain.
 const provenance = (await api('POST', '/api/execution', { text: '已有来源待办', date: '2026-07-04' })).body.execution;
 tdb.prepare('UPDATE executions SET rollover_origin_date=? WHERE id=?').run('2026-06-20', provenance.id);
 const provenanceRoll = await api('POST', '/api/rollover/past', { scope: 'day', to: '2026-07-10' });
-data = (await api('GET', '/api/data')).body;
 ok(provenanceRoll.status === 200 && provenanceRoll.body.count === 1 &&
-  data.executions.find(x => x.id === provenance.id)?.rollover_origin_date === '2026-06-20',
+  executionById.get(provenance.id)?.rollover_origin_date === '2026-06-20',
   '再次顺延不覆盖首次来源日');
 
 const completedTargetTask = (await api('POST', '/api/task', { name: '目标日已完成任务' })).body.task;
